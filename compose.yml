@@ -1,0 +1,12 @@
+services:
+  nedis:
+    image: ghcr.io/gosuda/nedis:latest
+    container_name: nedis-server
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - nedis-data:/data
+
+volumes:
+  nedis-data:

@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 500" width="850" height="500">
+<defs>
+<linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1e293b"/></linearGradient>
+<linearGradient id="barNedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0284c7"/><stop offset="100%" stop-color="#38bdf8"/></linearGradient>
+<linearGradient id="barRedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#ef4444"/><stop offset="100%" stop-color="#dc2626"/></linearGradient>
+<filter id="shadow" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/></filter>
+</defs>
+<rect width="850" height="500" rx="12" fill="url(#bgGrad)"/>
+<rect width="850" height="500" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
+<text x="30" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Redis 8.0 (C) vs Nedis Standard 6-Dimensional Throughput Benchmark</text>
+<text x="30" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#94a3b8">Standard Binary (GOAMD64=v1 Baseline) • Local Loopback TCP • Unit: QPS (Higher is better)</text>
+<rect x="560" y="28" width="14" height="14" rx="3" fill="url(#barNedis)"/>
+<text x="580" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">Nedis Standard</text>
+<rect x="710" y="28" width="14" height="14" rx="3" fill="url(#barRedis)"/>
+<text x="730" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">C Redis 8.0</text>
+<line x1="220.0" y1="80" x2="220.0" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
+<text x="220.0" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">0k</text>
+<line x1="372.1302460284146" y1="80" x2="372.1302460284146" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
+<text x="372.1302460284146" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">100k</text>
+<line x1="524.2604920568292" y1="80" x2="524.2604920568292" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
+<text x="524.2604920568292" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">200k</text>
+<line x1="676.3907380852436" y1="80" x2="676.3907380852436" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
+<text x="676.3907380852436" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">300k</text>
+<text x="205" y="106" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">1. Concurrency (SET/GET)</text>
+<rect x="220" y="86" width="469.6" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="697.5652173913043" y="100" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">308,660 (2.46x)</text>
+<rect x="220" y="108" width="191.1" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="419.0710251043078" y="122" font-family="monospace" font-size="11" fill="#f87171">125,597</text>
+<text x="205" y="166" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">2. Multi-Field Hash</text>
+<rect x="220" y="146" width="264.2" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="492.23654562921354" y="160" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">173,691 (1.68x)</text>
+<rect x="220" y="168" width="157.6" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="385.5932431632949" y="182" font-family="monospace" font-size="11" fill="#f87171">103,591</text>
+<text x="205" y="226" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">3. Ranked SkipList</text>
+<rect x="220" y="206" width="285.3" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="513.3491811730369" y="220" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">187,569 (1.57x)</text>
+<rect x="220" y="228" width="182.2" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="410.22008739037466" y="242" font-family="monospace" font-size="11" fill="#f87171">119,779</text>
+<text x="205" y="286" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">4. Stream Event Queue</text>
+<rect x="220" y="266" width="155.9" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="383.8924270126972" y="280" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">102,473 (1.23x)</text>
+<rect x="220" y="288" width="126.3" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="354.2711468085047" y="302" font-family="monospace" font-size="11" fill="#f87171">83,002</text>
+<text x="205" y="346" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">5. Redlock Atomic Lua</text>
+<rect x="220" y="326" width="227.1" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="455.07569043185265" y="340" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">149,264 (1.41x)</text>
+<rect x="220" y="348" width="160.5" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="388.48828174521566" y="362" font-family="monospace" font-size="11" fill="#f87171">105,494</text>
+<text x="205" y="406" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">6. Bitmap & HyperLogLog</text>
+<rect x="220" y="386" width="268.7" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
+<text x="496.66657839356094" y="400" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">176,603 (1.39x)</text>
+<rect x="220" y="408" width="193.3" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
+<text x="421.27843497418013" y="422" font-family="monospace" font-size="11" fill="#f87171">127,048</text>
+<line x1="30" y1="470" x2="820" y2="470" stroke="#334155" stroke-width="1"/>
+<text x="30" y="488" font-family="monospace" font-size="11" fill="#64748b">Benchmark Environment: AMD Ryzen 5 5600X (12T) | 64GB DDR4 | Linux 6.12 | Go 1.24.4</text>
+<text x="820" y="488" font-family="monospace" font-size="11" fill="#38bdf8" text-anchor="end">gosuda/nedis v1.0.0</text>
+</svg>

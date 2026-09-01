@@ -1,0 +1,7 @@
+.git
+.github
+bin/
+benchmarks/
+*.md
+*.svg
+.DS_Store

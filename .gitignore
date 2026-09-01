@@ -1,0 +1,16 @@
+# Binaries
+bin/
+/nedis-server
+*.exe
+*.test
+
+# Dump files
+*.rdb
+*.aof
+appendonlydir/
+
+# OS / Editor
+.DS_Store
+*.swp
+*.swo
+*~

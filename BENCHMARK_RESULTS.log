@@ -1,0 +1,24 @@
+==========================================================================================================================
+                           REDIS 8.0 (C) vs NEDIS (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                                
+==========================================================================================================================
+Benchmark Suite                     | Target       | Total Ops  | QPS (ops/s)  | P50 (ms)  | P95 (ms)  | P99 (ms)  | RAM Growth  
+--------------------------------------------------------------------------------------------------------------------------
+1. Concurrency Throughput (SET/GET) | C Redis 8.0  | 50000      | 125597       | 0.383     | 0.479     | 0.735     | 4.90 MB     
+1. Concurrency Throughput (SET/GET) | Nedis (Go)   | 50000      | 308660       | 0.121     | 0.339     | 0.678     | 12.18 MB    
+1. Concurrency Throughput (SET/GET) | Nedis (Go SIMD) | 50000      | 314137       | 0.120     | 0.335     | 0.641     | 13.13 MB    
+2. Multi-Field Hash Aggregation     | C Redis 8.0  | 20000      | 103591       | 0.183     | 0.263     | 0.346     | 1.84 MB     
+2. Multi-Field Hash Aggregation     | Nedis (Go)   | 20000      | 173691       | 0.107     | 0.184     | 0.316     | 11.84 MB    
+2. Multi-Field Hash Aggregation     | Nedis (Go SIMD) | 20000      | 184474       | 0.103     | 0.172     | 0.265     | 11.92 MB    
+3. SkipList Leaderboard (ZSet)      | C Redis 8.0  | 20000      | 119779       | 0.157     | 0.219     | 0.288     | 281.42 KB   
+3. SkipList Leaderboard (ZSet)      | Nedis (Go)   | 20000      | 187569       | 0.096     | 0.177     | 0.400     | 0 B         
+3. SkipList Leaderboard (ZSet)      | Nedis (Go SIMD) | 20000      | 188017       | 0.097     | 0.169     | 0.342     | 0 B         
+4. Stream Queue (XADD/XRANGE)       | C Redis 8.0  | 20000      | 83002        | 0.221     | 0.368     | 0.511     | 407.11 KB   
+4. Stream Queue (XADD/XRANGE)       | Nedis (Go)   | 20000      | 102473       | 0.147     | 0.521     | 0.933     | 10.65 MB    
+4. Stream Queue (XADD/XRANGE)       | Nedis (Go SIMD) | 20000      | 98392        | 0.147     | 0.550     | 0.999     | 12.04 MB    
+5. Redlock Atomic Lua Scripting     | C Redis 8.0  | 20000      | 105494       | 0.172     | 0.248     | 0.349     | 22.13 KB    
+5. Redlock Atomic Lua Scripting     | Nedis (Go)   | 20000      | 149264       | 0.114     | 0.185     | 0.447     | 3.96 MB     
+5. Redlock Atomic Lua Scripting     | Nedis (Go SIMD) | 20000      | 142121       | 0.113     | 0.198     | 0.578     | 8.65 MB     
+6. Bitmap & HyperLogLog             | C Redis 8.0  | 30000      | 127048       | 0.149     | 0.204     | 0.273     | 112.98 KB   
+6. Bitmap & HyperLogLog             | Nedis (Go)   | 30000      | 176603       | 0.103     | 0.192     | 0.323     | 9.89 MB     
+6. Bitmap & HyperLogLog             | Nedis (Go SIMD) | 30000      | 192631       | 0.096     | 0.180     | 0.274     | 9.92 MB     
+==========================================================================================================================
