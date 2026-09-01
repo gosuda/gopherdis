@@ -1,18 +1,18 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 850 500" width="850" height="500">
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 500" width="1050" height="500">
 <defs>
 <linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1e293b"/></linearGradient>
 <linearGradient id="barNedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#8b5cf6"/><stop offset="100%" stop-color="#c084fc"/></linearGradient>
 <linearGradient id="barRedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#ef4444"/><stop offset="100%" stop-color="#dc2626"/></linearGradient>
 <filter id="shadow" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/></filter>
 </defs>
-<rect width="850" height="500" rx="12" fill="url(#bgGrad)"/>
-<rect width="850" height="500" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
+<rect width="1050" height="500" rx="12" fill="url(#bgGrad)"/>
+<rect width="1050" height="500" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
 <text x="30" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Redis 8.0 (C) vs Nedis SIMD / AVX2 6-Dimensional Throughput Benchmark</text>
 <text x="30" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#94a3b8">SIMD Vectorized Binary (GOAMD64=v3 AVX2/FMA/POPCNT/BMI2) • Local Loopback TCP • Unit: QPS (Higher is better)</text>
-<rect x="560" y="28" width="14" height="14" rx="3" fill="url(#barNedis)"/>
-<text x="580" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">Nedis SIMD / AVX2</text>
-<rect x="710" y="28" width="14" height="14" rx="3" fill="url(#barRedis)"/>
-<text x="730" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">C Redis 8.0</text>
+<rect x="800" y="28" width="14" height="14" rx="3" fill="url(#barNedis)"/>
+<text x="820" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">Nedis SIMD / AVX2</text>
+<rect x="960" y="28" width="14" height="14" rx="3" fill="url(#barRedis)"/>
+<text x="980" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">C Redis 8.0</text>
 <line x1="220.0" y1="80" x2="220.0" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
 <text x="220.0" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">0k</text>
 <line x1="369.4778448228971" y1="80" x2="369.4778448228971" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
@@ -51,7 +51,7 @@
 <text x="515.940667260795" y="400" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">192,631 (1.52x)</text>
 <rect x="220" y="408" width="189.9" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
 <text x="417.9086122905943" y="422" font-family="monospace" font-size="11" fill="#f87171">127,048</text>
-<line x1="30" y1="470" x2="820" y2="470" stroke="#334155" stroke-width="1"/>
+<line x1="30" y1="470" x2="1020" y2="470" stroke="#334155" stroke-width="1"/>
 <text x="30" y="488" font-family="monospace" font-size="11" fill="#64748b">Benchmark Environment: AMD Ryzen 5 5600X (12T) | 64GB DDR4 | Linux 6.12 | Go 1.24.4</text>
-<text x="820" y="488" font-family="monospace" font-size="11" fill="#38bdf8" text-anchor="end">gosuda/nedis v1.0.0</text>
+<text x="1020" y="488" font-family="monospace" font-size="11" fill="#38bdf8" text-anchor="end">gosuda/nedis v1.0.0</text>
 </svg>

@@ -19,9 +19,9 @@
 
 Under identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Nedis delivers **2.0x to 2.8x higher throughput** across core workloads by replacing Redis's single-threaded event loop with a 64-shard concurrent architecture and zero-allocation memory arenas.
 
-![C Redis 8.0 vs Nedis Standard Benchmark](benchmark_chart.svg?v=2)
+![C Redis 8.0 vs Nedis Standard Benchmark](benchmark_chart.svg?v=3)
 
-![C Redis 8.0 vs Nedis SIMD Benchmark](benchmark_chart_simd.svg?v=2)
+![C Redis 8.0 vs Nedis SIMD Benchmark](benchmark_chart_simd.svg?v=3)
 
 ### 📊 6-Dimensional Benchmark Summary
 
