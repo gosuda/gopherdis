@@ -16,7 +16,7 @@ This document details the multi-dimensional benchmark methodology and performanc
 
 ## 2. 📈 Performance Visualization
 
-![C Redis vs Nedis Benchmark Chart](benchmark_chart.svg)
+![C Redis vs Nedis Benchmark Chart](benchmark_chart.svg?v=2)
 
 ## 3. 📋 Benchmark Summary Table
 
