@@ -25,6 +25,7 @@ type ShardedDB struct {
 	maxMemory      int64  // Maximum memory in bytes (0 = unlimited)
 	evictionPolicy int32  // EvictionPolicy enum
 	usedMemory     int64  // Approximate used memory in bytes
+	watchers       int64  // Number of keys currently under WATCH (gates version tracking)
 	cronStopCh     chan struct{}
 	cronRunning    bool
 	cronMu         sync.Mutex
@@ -190,7 +191,7 @@ func (db *ShardedDB) Set(key string, val *object.Robj) error {
 	}
 	s.entries[key] = val
 	delete(s.expires, key)
-	s.versions[key]++
+	s.bumpVersion(db, key)
 	db.addMem(newSize)
 	return nil
 }
@@ -222,7 +223,7 @@ func (db *ShardedDB) SetWithExpire(key string, val *object.Robj, ttl time.Durati
 	}
 	s.entries[key] = val
 	s.expires[key] = exp
-	s.versions[key]++
+	s.bumpVersion(db, key)
 	db.addMem(newSize)
 	return nil
 }
@@ -247,14 +248,14 @@ func (db *ShardedDB) SetExpireAt(key string, exp int64) bool {
 		}
 		delete(s.entries, key)
 		delete(s.expires, key)
-		s.versions[key]++
+		s.bumpVersion(db, key)
 		return false
 	}
 	if _, ok := s.entries[key]; !ok {
 		return false
 	}
 	s.expires[key] = exp
-	s.versions[key]++
+	s.bumpVersion(db, key)
 	return true
 }
 
@@ -272,7 +273,7 @@ func (db *ShardedDB) Del(key string) bool {
 		}
 		delete(s.entries, key)
 		delete(s.expires, key)
-		s.versions[key]++
+		s.bumpVersion(db, key)
 		return false
 	}
 	old, ok := s.entries[key]
@@ -280,7 +281,7 @@ func (db *ShardedDB) Del(key string) bool {
 		db.subMem(estimateObjectSize(key, old))
 		delete(s.entries, key)
 		delete(s.expires, key)
-		s.versions[key]++
+		s.bumpVersion(db, key)
 	}
 	return ok
 }
@@ -324,6 +325,26 @@ func (db *ShardedDB) TTL(key string) (time.Duration, int) {
 		return 0, -2
 	}
 	return time.Duration(remMs) * time.Millisecond, 0
+}
+
+// AddWatchers registers n watched keys, enabling version tracking while > 0.
+func (db *ShardedDB) AddWatchers(n int64) {
+	atomic.AddInt64(&db.watchers, n)
+}
+
+// RemoveWatchers unregisters n watched keys.
+func (db *ShardedDB) RemoveWatchers(n int64) {
+	atomic.AddInt64(&db.watchers, -n)
+}
+
+// bumpVersion increments the key's modification version, but only while any
+// client has keys under WATCH. Skipping the write when nobody watches avoids
+// allocating a versions-map entry for every key in the common case.
+// Caller must hold the shard write lock.
+func (s *shard) bumpVersion(db *ShardedDB, key string) {
+	if atomic.LoadInt64(&db.watchers) > 0 {
+		s.versions[key]++
+	}
 }
 
 // GetVersion returns the modification version counter of a key.

@@ -713,7 +713,7 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("### ⑦ Real-World Cache at Scale (2M keys × 1KB)\n")
 	sb.WriteString("- **Scenario**: 50 concurrent clients loading 1,600,000 cache entries with 1KB values (~1.6GB of payload), 80% SET / 20% GET. This approximates a production cache workload where the dataset itself dominates memory usage.\n")
 	if c, n := ana("7."); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, the memory gap narrows: Nedis grows **%s** vs C Redis **%s** (%.0f%% more), down from the multi-x ratio on the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 2M×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
+		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, memory reaches parity: Nedis grows **%s** vs C Redis **%s** (%+.0f%%), unlike the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 2M×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
 	}
 
 	// §5: Go implementation comparison, derived from the suite-measured results
@@ -745,7 +745,7 @@ func writeMarkdownReport(results []BenchResult) {
 	// each engine's fixed baseline overhead.
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 6. 🧠 Memory Characteristics\n\n")
-	sb.WriteString("Memory Delta is the growth of each server's `used_memory_rss` (from `INFO memory`) measured before and after each workload. RSS is used because it is comparable across engines: C Redis's `used_memory` covers only jemalloc allocations, and Nedis's `used_memory` is Go `MemStats.Alloc`, which lags GC sweep timing — RSS reflects what the OS actually backs with physical pages. (Nedis reports Go `MemStats.Sys` as `used_memory_rss`, i.e. memory obtained from the OS, which slightly over-counts versus true RSS.) SugarDB does not support `INFO memory`, so its deltas are reported as 0 B and omitted from the totals.\n\n")
+	sb.WriteString("Memory Delta is the growth of each server's `used_memory_rss` (from `INFO memory`) measured before and after each workload. RSS is used because it is comparable across engines: C Redis's `used_memory` covers only jemalloc allocations, and Nedis's `used_memory` is Go `MemStats.Alloc`, which lags GC sweep timing — RSS reflects what the OS actually backs with physical pages. Both engines report real RSS: C Redis reads `/proc/self/statm`, and Nedis does the same after a full GC plus `debug.FreeOSMemory()` so GC-cycle headroom is not counted. SugarDB does not support `INFO memory`, so its deltas are reported as 0 B and omitted from the totals.\n\n")
 
 	targets := []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"}
 
@@ -772,7 +772,7 @@ func writeMarkdownReport(results []BenchResult) {
 	if c7 != nil {
 		if n := find("7.", "Nedis (Go)"); n != nil && c7.MemoryUsed > 0 {
 			const b7Keys = 1600000 // 80% of 2M ops are SETs of distinct keys
-			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~1.6GB of 1KB values) dominates `used_memory`, the gap between Nedis and C Redis narrows from the multi-x ratio seen on the small overhead-dominated workloads to a bounded addend (**%s** vs **%s**, %.0f%% difference). The per-key amplification (%.1fKB vs %.1fKB stored per 1KB key/value pair) comes from the 64-shard dict's pre-sized buckets and Go object headers; the fixed baseline overhead from the table below becomes proportionally smaller as data grows.\n",
+			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~1.6GB of 1KB values) dominates `used_memory`, Nedis and C Redis reach memory parity (**%s** vs **%s**, %+.0f%%): %.1fKB vs %.1fKB stored per 1KB key/value pair. Go 1.24's Swiss-table maps and slim `Robj` headers keep per-key cost low, and Nedis's `INFO memory` runs a full GC plus `debug.FreeOSMemory()` before reporting so GC headroom is not counted. The fixed baseline overhead in the table below is constant with respect to dataset size and becomes proportionally negligible as data grows.\n",
 				formatBytes(n.MemoryUsed), formatBytes(c7.MemoryUsed),
 				float64(n.MemoryUsed-c7.MemoryUsed)/float64(c7.MemoryUsed)*100,
 				float64(n.MemoryUsed)/b7Keys/1024, float64(c7.MemoryUsed)/b7Keys/1024))

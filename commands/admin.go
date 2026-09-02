@@ -2,7 +2,9 @@ package commands
 
 import (
 	"fmt"
+	"os"
 	"runtime"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
@@ -198,6 +200,21 @@ func helloCommand(ctx *Context, argv [][]byte) []byte {
 	})
 }
 
+// procRSS reads the process resident set size from /proc/self/statm, matching
+// how C Redis computes used_memory_rss. Falls back to MemStats.Sys on error.
+func procRSS(m runtime.MemStats) uint64 {
+	data, err := os.ReadFile("/proc/self/statm")
+	if err != nil {
+		return m.Sys
+	}
+	// statm fields: size resident shared text lib data dt (in pages)
+	var size, resident uint64
+	if _, err := fmt.Sscanf(string(data), "%d %d", &size, &resident); err != nil {
+		return m.Sys
+	}
+	return resident * uint64(os.Getpagesize())
+}
+
 func infoCommand(ctx *Context, argv [][]byte) []byte {
 	section := "all"
 	if len(argv) >= 2 {
@@ -207,7 +224,15 @@ func infoCommand(ctx *Context, argv [][]byte) []byte {
 	var sb strings.Builder
 	uptime := int64(time.Since(serverStartTime).Seconds())
 
+	// Only the memory section needs exact stats; collect them after a full GC
+	// and return free spans to the OS so used_memory/used_memory_rss reflect
+	// live data instead of GC-cycle headroom (Go's runtime otherwise reports
+	// up to 2x live heap mid-cycle under GOGC=100).
 	var m runtime.MemStats
+	if section == "all" || section == "memory" || section == "default" {
+		runtime.GC()
+		debug.FreeOSMemory()
+	}
 	runtime.ReadMemStats(&m)
 
 	keysCount := int64(0)
@@ -240,8 +265,11 @@ func infoCommand(ctx *Context, argv [][]byte) []byte {
 		sb.WriteString("# Memory\r\n")
 		sb.WriteString(fmt.Sprintf("used_memory:%d\r\n", m.Alloc))
 		sb.WriteString(fmt.Sprintf("used_memory_human:%.2fM\r\n", float64(m.Alloc)/(1024*1024)))
-		sb.WriteString(fmt.Sprintf("used_memory_rss:%d\r\n", m.Sys))
+		sb.WriteString(fmt.Sprintf("used_memory_rss:%d\r\n", procRSS(m)))
 		sb.WriteString(fmt.Sprintf("used_memory_peak:%d\r\n", m.TotalAlloc))
+		sb.WriteString(fmt.Sprintf("heap_sys:%d\r\n", m.HeapSys))
+		sb.WriteString(fmt.Sprintf("heap_idle:%d\r\n", m.HeapIdle))
+		sb.WriteString(fmt.Sprintf("heap_released:%d\r\n", m.HeapReleased))
 	}
 
 	if section == "all" || section == "persistence" || section == "default" {

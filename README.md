@@ -2,7 +2,7 @@
 
 # Nedis
 
-**A Redis-compatible in-memory store in pure Go that outperforms C Redis by up to 2.3x on multi-core hardware**
+**A Redis-compatible in-memory store in pure Go that outperforms C Redis by up to 2.7x on multi-core hardware**
 
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Compatibility](https://img.shields.io/badge/Redis%20Compatibility-100%25%20(RESP2%20%26%20RESP3)-E10098?style=flat&logo=redis)](https://redis.io)
@@ -32,7 +32,7 @@ Official C Redis executes all commands on one thread, so throughput is capped by
 
 ## How fast is it?
 
-Measured on identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Nedis delivers **1.4x to 2.3x higher throughput** than C Redis 8.0 across seven workload types, from synthetic microbenchmarks to a 2M-key real-world cache load.
+Measured on identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Nedis delivers **1.2x to 2.7x higher throughput** than C Redis 8.0 across seven workload types, from synthetic microbenchmarks to a 2M-key real-world cache load.
 
 ![C Redis 8.0 vs Nedis Standard Benchmark](benchmark_chart.svg?v=3)
 
@@ -42,33 +42,33 @@ Measured on identical hardware and network conditions (AMD Ryzen 5 5600X, Debian
 
 | Workload | C Redis 8.0 | Nedis (Standard) | Nedis (SIMD/AVX2) | SugarDB (Go) | SIMD Speedup | SIMD P99 / P99.9 vs C Redis |
 |---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **Concurrent SET / GET** (50 Clients) | 132,205 ops/s | 309,445 ops/s | **304,610 ops/s** | 100,131 ops/s | **2.30x** (P50: 0.129ms) | 0.711ms +4% / 1.576ms +32% |
-| **Multi-Field Hash** (5 Fields HSET/HMGET) | 118,447 ops/s | 196,183 ops/s | **184,902 ops/s** | 93,670 ops/s | **1.56x** (P50: 0.102ms) | 0.319ms +8% / 1.728ms +368% |
-| **SkipList Leaderboard** (ZADD/ZRANK/ZRANGE) | 123,131 ops/s | 198,272 ops/s | **191,772 ops/s** | 616,610 ops/s † | **1.56x** (P50: 0.098ms) | 0.286ms **−1%** / 1.135ms +216% |
-| **Stream Event Queue** (XADD/XRANGE) | 69,949 ops/s | 108,743 ops/s | **110,124 ops/s** | N/A | **1.57x** (P50: 0.141ms) | 0.777ms **−16%** / 1.307ms **−27%** |
-| **Redlock Lua Script** (Bytecode JIT) | 115,297 ops/s | 156,623 ops/s | **156,793 ops/s** | N/A | **1.36x** (P50: 0.119ms) | 0.351ms +18% / 3.264ms +763% |
-| **Bitmap & HyperLogLog** (POPCNT / Dense HLL) | 129,724 ops/s | 207,327 ops/s | **209,039 ops/s** | N/A | **1.61x** (P50: 0.095ms) | 0.192ms **−26%** / 0.634ms +84% |
-| **Real-World Cache** (2M keys × 1KB) | 115,147 ops/s | 194,518 ops/s | **194,538 ops/s** | N/A ‡ | **1.69x** (P50: 0.127ms) | 1.211ms +47% / 2.291ms +47% |
+| **Concurrent SET / GET** (50 Clients) | 111,124 ops/s | 310,806 ops/s | **295,038 ops/s** | 94,495 ops/s | **2.66x** (P50: 0.131ms) | 0.707ms **−18%** / 1.889ms +41% |
+| **Multi-Field Hash** (5 Fields HSET/HMGET) | 114,675 ops/s | 173,996 ops/s | **177,535 ops/s** | 82,641 ops/s | **1.55x** (P50: 0.105ms) | 0.383ms +22% / 0.780ms +74% |
+| **SkipList Leaderboard** (ZADD/ZRANK/ZRANGE) | 116,175 ops/s | 184,002 ops/s | **180,785 ops/s** | 594,594 ops/s † | **1.56x** (P50: 0.098ms) | 0.364ms +16% / 0.985ms +86% |
+| **Stream Event Queue** (XADD/XRANGE) | 84,228 ops/s | 99,258 ops/s | **99,556 ops/s** | N/A | **1.18x** (P50: 0.152ms) | 0.952ms +94% / 2.091ms +80% |
+| **Redlock Lua Script** (Bytecode JIT) | 111,134 ops/s | 116,181 ops/s | **131,999 ops/s** | N/A | **1.19x** (P50: 0.134ms) | 0.448ms +31% / 5.931ms +792% |
+| **Bitmap & HyperLogLog** (POPCNT / Dense HLL) | 96,050 ops/s | 194,895 ops/s | **197,217 ops/s** | N/A | **2.05x** (P50: 0.099ms) | 0.234ms **−52%** / 1.147ms +4% |
+| **Real-World Cache** (2M keys × 1KB) | 109,826 ops/s | 182,816 ops/s | **182,659 ops/s** | N/A ‡ | **1.66x** (P50: 0.154ms) | 1.294ms +47% / 2.818ms +71% |
 
 Tail-latency percentages are versus the C Redis row of the same workload; negative (bold) is better. Nedis wins P99 on SET/GET, Hash, ZSet, and Bitmap workloads, but its P99.9 tail runs longer under GC pauses — the tradeoff for the throughput gains above.
 
 ### Memory Characteristics (`used_memory_rss` growth)
 
-At realistic dataset sizes, the memory gap narrows to a bounded addend — 2M keys × 1KB values (~1.6GB payload):
+At realistic dataset sizes, Nedis and C Redis reach memory parity — 2M keys × 1KB values (~1.6GB payload):
 
 | Target | Memory Delta | vs C Redis |
 |---|:---:|:---:|
 | **C Redis 8.0** | 2.06 GB | baseline |
-| **Nedis (Standard)** | 3.00 GB | 1.46x |
-| **Nedis (SIMD/AVX2)** | 2.99 GB | 1.46x |
+| **Nedis (Standard)** | 1.82 GB | **0.88x** |
+| **Nedis (SIMD/AVX2)** | 1.82 GB | **0.88x** |
 
-On small overhead-dominated workloads (1–6), the fixed baseline differs more sharply: **6.25 MB (C Redis)** vs **75.75 MB (Nedis Standard)** total. The gap is deliberate pre-allocation (per-shard buffers, retained 8KB stream arena slabs) plus per-key storage amplification (2.0KB vs 1.3KB per 1KB pair) from shard bucket pre-sizing — constant with respect to dataset size, so it becomes proportionally smaller as data grows. See [BENCHMARK_REPORT.md §6](BENCHMARK_REPORT.md).
+Per-key cost is **1.2KB (Nedis) vs 1.4KB (C Redis)** per 1KB key/value pair: Go 1.24's Swiss-table maps and slim `Robj` headers keep per-key overhead below jemalloc's, and Nedis's `INFO memory` runs a full GC plus `debug.FreeOSMemory()` before reporting so GC headroom is not counted. On small overhead-dominated workloads (1–6) the fixed baseline is **5.88 MB (C Redis)** vs **26.62 MB (Nedis Standard)** — constant with respect to dataset size and negligible at scale. See [BENCHMARK_REPORT.md §6](BENCHMARK_REPORT.md).
 
 > † SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics and returns empty sets under this index-range workload, so its ZSet QPS is not apples-to-apples. SugarDB does not support Streams, Lua scripting, or Bitmap/HLL commands (N/A).
 >
 > ‡ SugarDB's server process crashes (container exit 2, goroutine dump) under the 2M×1KB real-world cache workload, so it is marked N/A there.
 >
-> Detailed methodology, latencies (P50/P95/P99/P99.9), and memory profiles are documented in [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md). Against SugarDB, the leading pure-Go in-memory Redis alternative, Nedis is roughly **3.1x faster** on SET/GET (~309k vs ~100k ops/s) under the same harness. See [BENCHMARK_REPORT.md §5](BENCHMARK_REPORT.md).
+> Detailed methodology, latencies (P50/P95/P99/P99.9), and memory profiles are documented in [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md). Against SugarDB, the leading pure-Go in-memory Redis alternative, Nedis is roughly **3.3x faster** on SET/GET (~311k vs ~94k ops/s) under the same harness. See [BENCHMARK_REPORT.md §5](BENCHMARK_REPORT.md).
 
 ## What does it support?
 

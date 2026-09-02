@@ -23,11 +23,20 @@ func NewTxState() *TxState {
 }
 
 // Reset clears transaction and watch states.
-func (tx *TxState) Reset() {
+func (tx *TxState) Reset(database *db.ShardedDB) {
+	tx.clearWatch(database)
 	tx.InMulti = false
 	tx.QueuedCmds = nil
-	tx.Watched = make(map[string]uint64)
 	tx.DirtyCAS = false
+}
+
+// clearWatch drops all watched keys and unregisters them from the DB's
+// watcher count (which gates per-key version tracking).
+func (tx *TxState) clearWatch(database *db.ShardedDB) {
+	if len(tx.Watched) > 0 {
+		database.RemoveWatchers(int64(len(tx.Watched)))
+		tx.Watched = make(map[string]uint64)
+	}
 }
 
 func init() {
@@ -79,7 +88,7 @@ func discardCommand(ctx *Context, argv [][]byte) []byte {
 	if ctx.Tx == nil || !ctx.Tx.InMulti {
 		return Error("DISCARD without MULTI")
 	}
-	ctx.Tx.Reset()
+	ctx.Tx.Reset(ctx.DB)
 	return OK()
 }
 
@@ -90,8 +99,14 @@ func watchCommand(ctx *Context, argv [][]byte) []byte {
 	if ctx.Tx.InMulti {
 		return Error("WATCH inside MULTI is not allowed")
 	}
+	// Register watchers before reading versions so any concurrent write is
+	// guaranteed to bump the version (writes only track versions while the
+	// global watcher count is non-zero).
 	for i := 1; i < len(argv); i++ {
 		key := string(argv[i])
+		if _, ok := ctx.Tx.Watched[key]; !ok {
+			ctx.DB.AddWatchers(1)
+		}
 		ctx.Tx.Watched[key] = ctx.DB.GetVersion(key)
 	}
 	return OK()
@@ -99,7 +114,7 @@ func watchCommand(ctx *Context, argv [][]byte) []byte {
 
 func unwatchCommand(ctx *Context, argv [][]byte) []byte {
 	if ctx.Tx != nil {
-		ctx.Tx.Watched = make(map[string]uint64)
+		ctx.Tx.clearWatch(ctx.DB)
 		ctx.Tx.DirtyCAS = false
 	}
 	return OK()
@@ -116,20 +131,20 @@ func execCommand(ctx *Context, argv [][]byte) []byte {
 
 	// 2. CAS Verification for WATCHed keys
 	if ctx.Tx.DirtyCAS {
-		ctx.Tx.Reset()
+		ctx.Tx.Reset(ctx.DB)
 		return NullArray()
 	}
 
 	for key, originalVer := range ctx.Tx.Watched {
 		if ctx.DB.GetVersion(key) != originalVer {
-			ctx.Tx.Reset()
+			ctx.Tx.Reset(ctx.DB)
 			return NullArray()
 		}
 	}
 
 	queued := ctx.Tx.QueuedCmds
 	if len(queued) == 0 {
-		ctx.Tx.Reset()
+		ctx.Tx.Reset(ctx.DB)
 		return Array(nil)
 	}
 
@@ -142,7 +157,7 @@ func execCommand(ctx *Context, argv [][]byte) []byte {
 		replies[i] = DefaultTable.Execute(ctx, cmdArgv)
 	}
 
-	ctx.Tx.Reset()
+	ctx.Tx.Reset(ctx.DB)
 	return Array(replies)
 }
 
