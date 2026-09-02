@@ -75,10 +75,12 @@ This document details the multi-dimensional benchmark methodology and performanc
 
 Identical machine (AMD Ryzen 5 5600X, 127.0.0.1 TCP), identical harness: `redis-benchmark -c 50 -n 50000 -d 128 -t set,get --threads 4`. SugarDB (latest, pure Go in-memory) ran in Docker with host networking.
 
-| Target | SET (ops/s) | GET (ops/s) | vs Nedis |
-|---|---|---|---|
-| **Nedis (Pure Go)** | **198,412** | **199,203** | — |
-| C Redis 8.0 | 99,800 | 100,000 | Nedis ≈ 2.0x faster |
-| SugarDB (Go) | 66,489 | 66,578 | Nedis ≈ 3.0x faster |
+| Target | SET (ops/s) | SET P99 (ms) | SET P99.9 (ms) | GET (ops/s) | GET P99 (ms) | GET P99.9 (ms) |
+|---|---|---|---|---|---|---|
+| **Nedis (Pure Go)** | **198,412** | **0.383** | **1.103** | **199,203** | **0.351** | **2.007** |
+| C Redis 8.0 | 99,800 | 0.647 | 0.807 | 100,000 | 0.647 | 0.807 |
+| SugarDB (Go) | 66,489 | 2.207 | 4.103 | 66,578 | 2.407 | 4.103 |
+
+Throughput: Nedis ≈ **2.0x C Redis** and ≈ **3.0x SugarDB**. Tail latency: Nedis shows the lowest P99 across both workloads; SugarDB's P99 is ~5x worse than Nedis.
 
 **Conclusion**: Against SugarDB, the most actively maintained pure-Go in-memory Redis alternative, Nedis delivers roughly **3x higher throughput** under the same conditions.
