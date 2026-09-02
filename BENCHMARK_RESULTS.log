@@ -1,30 +1,34 @@
 ==========================================================================================================================
-               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                       
+               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 7-DIMENSIONAL BENCHMARK REPORT                       
 ==========================================================================================================================
 Benchmark Suite                     | Target         | Total Ops  | QPS (ops/s)  | P50 (ms)  | P95 (ms)  | P99 (ms)  | P99.9 (ms) | RAM Growth  
 --------------------------------------------------------------------------------------------------------------------------
-1. Concurrency Throughput (SET/GET) | C Redis 8.0    | 50000      | 123923       | 0.387     | 0.494     | 0.730     | 0.918     | 4.90 MB     
-1. Concurrency Throughput (SET/GET) | Nedis (Go)     | 50000      | 313256       | 0.124     | 0.313     | 0.796     | 2.064     | 11.72 MB    
-1. Concurrency Throughput (SET/GET) | Nedis (Go SIMD) | 50000      | 321851       | 0.127     | 0.309     | 0.588     | 1.452     | 12.40 MB    
-1. Concurrency Throughput (SET/GET) | SugarDB (Go)   | 50000      | 97855        | 0.268     | 1.516     | 2.161     | 4.705     | 0 B         
-2. Multi-Field Hash Aggregation     | C Redis 8.0    | 20000      | 120440       | 0.154     | 0.220     | 0.295     | 0.393     | 1.84 MB     
-2. Multi-Field Hash Aggregation     | Nedis (Go)     | 20000      | 189238       | 0.102     | 0.159     | 0.285     | 0.903     | 13.60 MB    
-2. Multi-Field Hash Aggregation     | Nedis (Go SIMD) | 20000      | 196599       | 0.100     | 0.154     | 0.235     | 0.572     | 12.62 MB    
-2. Multi-Field Hash Aggregation     | SugarDB (Go)   | 20000      | 97240        | 0.146     | 0.480     | 0.736     | 13.935    | 0 B         
-3. SkipList Leaderboard (ZSet)      | C Redis 8.0    | 20000      | 122047       | 0.155     | 0.213     | 0.284     | 0.357     | 282.78 KB   
-3. SkipList Leaderboard (ZSet)      | Nedis (Go)     | 20000      | 202417       | 0.091     | 0.162     | 0.271     | 1.089     | 0 B         
-3. SkipList Leaderboard (ZSet)      | Nedis (Go SIMD) | 20000      | 198623       | 0.093     | 0.160     | 0.254     | 1.428     | 0 B         
-3. SkipList Leaderboard (ZSet)      | SugarDB (Go)   | 20000      | 619799       | 0.008     | 0.010     | 0.018     | 8.531     | 0 B         
-4. Stream Queue (XADD/XRANGE)       | C Redis 8.0    | 20000      | 87330        | 0.216     | 0.350     | 0.460     | 0.861     | 407.17 KB   
-4. Stream Queue (XADD/XRANGE)       | Nedis (Go)     | 20000      | 108872       | 0.140     | 0.502     | 0.854     | 1.323     | 10.56 MB    
-4. Stream Queue (XADD/XRANGE)       | Nedis (Go SIMD) | 20000      | 111162       | 0.138     | 0.473     | 0.829     | 1.735     | 10.82 MB    
+1. Concurrency Throughput (SET/GET) | C Redis 8.0    | 50000      | 129591       | 0.366     | 0.465     | 0.721     | 1.198     | 4.50 MB     
+1. Concurrency Throughput (SET/GET) | Nedis (Go)     | 50000      | 313822       | 0.135     | 0.306     | 0.547     | 1.559     | 22.38 MB    
+1. Concurrency Throughput (SET/GET) | Nedis (Go SIMD) | 50000      | 319249       | 0.129     | 0.304     | 0.635     | 1.354     | 22.62 MB    
+1. Concurrency Throughput (SET/GET) | SugarDB (Go)   | 50000      | 105872       | 0.248     | 1.481     | 2.038     | 2.930     | 0 B         
+2. Multi-Field Hash Aggregation     | C Redis 8.0    | 20000      | 115000       | 0.163     | 0.234     | 0.308     | 0.433     | 1.62 MB     
+2. Multi-Field Hash Aggregation     | Nedis (Go)     | 20000      | 189069       | 0.104     | 0.161     | 0.238     | 0.699     | 12.19 MB    
+2. Multi-Field Hash Aggregation     | Nedis (Go SIMD) | 20000      | 189965       | 0.102     | 0.160     | 0.258     | 0.553     | 12.38 MB    
+2. Multi-Field Hash Aggregation     | SugarDB (Go)   | 20000      | 93974        | 0.147     | 0.513     | 0.784     | 1.330     | 0 B         
+3. SkipList Leaderboard (ZSet)      | C Redis 8.0    | 20000      | 118036       | 0.156     | 0.235     | 0.318     | 0.481     | 128.00 KB   
+3. SkipList Leaderboard (ZSet)      | Nedis (Go)     | 20000      | 169995       | 0.112     | 0.184     | 0.316     | 1.106     | 256.00 KB   
+3. SkipList Leaderboard (ZSet)      | Nedis (Go SIMD) | 20000      | 198830       | 0.095     | 0.163     | 0.278     | 0.614     | 64.00 KB    
+3. SkipList Leaderboard (ZSet)      | SugarDB (Go)   | 20000      | 637205       | 0.009     | 0.011     | 0.054     | 7.851     | 0 B         
+4. Stream Queue (XADD/XRANGE)       | C Redis 8.0    | 20000      | 87646        | 0.218     | 0.346     | 0.445     | 0.559     | 384.00 KB   
+4. Stream Queue (XADD/XRANGE)       | Nedis (Go)     | 20000      | 111670       | 0.137     | 0.473     | 0.832     | 1.744     | 20.94 MB    
+4. Stream Queue (XADD/XRANGE)       | Nedis (Go SIMD) | 20000      | 111107       | 0.144     | 0.436     | 0.798     | 1.433     | 20.44 MB    
 4. Stream Queue (XADD/XRANGE)       | SugarDB (Go)   | N/A (unsupported)                                                   
-5. Redlock Atomic Lua Scripting     | C Redis 8.0    | 20000      | 110752       | 0.173     | 0.240     | 0.316     | 0.379     | 22.16 KB    
-5. Redlock Atomic Lua Scripting     | Nedis (Go)     | 20000      | 78893        | 0.116     | 0.186     | 1.197     | 6.002     | 0 B         
-5. Redlock Atomic Lua Scripting     | Nedis (Go SIMD) | 20000      | 136547       | 0.133     | 0.218     | 0.394     | 5.186     | 155.13 KB   
+5. Redlock Atomic Lua Scripting     | C Redis 8.0    | 20000      | 111578       | 0.170     | 0.242     | 0.311     | 0.378     | 0 B         
+5. Redlock Atomic Lua Scripting     | Nedis (Go)     | 20000      | 156551       | 0.115     | 0.180     | 0.306     | 6.151     | 16.07 MB    
+5. Redlock Atomic Lua Scripting     | Nedis (Go SIMD) | 20000      | 147882       | 0.119     | 0.191     | 0.406     | 5.754     | 16.07 MB    
 5. Redlock Atomic Lua Scripting     | SugarDB (Go)   | N/A (unsupported)                                                   
-6. Bitmap & HyperLogLog             | C Redis 8.0    | 30000      | 133526       | 0.139     | 0.191     | 0.259     | 0.332     | 112.98 KB   
-6. Bitmap & HyperLogLog             | Nedis (Go)     | 30000      | 206107       | 0.093     | 0.154     | 0.223     | 1.087     | 9.96 MB     
-6. Bitmap & HyperLogLog             | Nedis (Go SIMD) | 30000      | 205275       | 0.098     | 0.147     | 0.193     | 0.587     | 9.91 MB     
+6. Bitmap & HyperLogLog             | C Redis 8.0    | 30000      | 131605       | 0.142     | 0.198     | 0.258     | 0.338     | 128.00 KB   
+6. Bitmap & HyperLogLog             | Nedis (Go)     | 30000      | 212911       | 0.093     | 0.141     | 0.190     | 0.713     | 0 B         
+6. Bitmap & HyperLogLog             | Nedis (Go SIMD) | 30000      | 210141       | 0.095     | 0.143     | 0.181     | 0.396     | 0 B         
 6. Bitmap & HyperLogLog             | SugarDB (Go)   | N/A (unsupported)                                                   
+7. Real-World Cache (500k x 1KB)    | C Redis 8.0    | 500000     | 117916       | 0.403     | 0.516     | 0.790     | 1.538     | 523.18 MB   
+7. Real-World Cache (500k x 1KB)    | Nedis (Go)     | 500000     | 193763       | 0.128     | 0.744     | 1.211     | 2.417     | 814.17 MB   
+7. Real-World Cache (500k x 1KB)    | Nedis (Go SIMD) | 500000     | 193823       | 0.129     | 0.745     | 1.203     | 2.103     | 863.48 MB   
+7. Real-World Cache (500k x 1KB)    | SugarDB (Go)   | N/A (unsupported)                                                   
 ==========================================================================================================================
