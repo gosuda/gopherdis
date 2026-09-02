@@ -35,6 +35,8 @@ Under identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux
 | **Bitmap & HyperLogLog** (POPCNT / Dense HLL) | 127,048 ops/s | 176,603 ops/s | **192,631 ops/s** | **1.52x** ⚡ (P50: **0.096ms**) |
 
 > 📖 Detailed methodology, latencies (P50/P95/P99), and memory profiles are documented in [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md).
+>
+> 🐹 **vs other Go implementations**: under an identical `redis-benchmark` harness on the same machine, Nedis (~199k ops/s) is roughly **3x faster than SugarDB** (~66.5k ops/s), the leading pure-Go in-memory Redis alternative. See [BENCHMARK_REPORT.md §5](BENCHMARK_REPORT.md).
 
 ---
 

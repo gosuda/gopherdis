@@ -68,3 +68,17 @@ This document details the multi-dimensional benchmark methodology and performanc
 ### ⑥ Bitmap & HyperLogLog Cardinality Estimation
 - **Scenario**: 100,000 bit mutations with SETBIT, 64-bit word POPCNT BITCOUNT, and 50,000 unique IP insertions with PFADD/PFCOUNT.
 - **Analysis**: In-place zero-reallocation bit mutation, `math/bits.OnesCount64` hardware acceleration, and 12KB Dense Otmar Ertl HLL registers achieve **274.3k QPS (2.24x C Redis)** with **P50 of 0.056ms** and **P95 of 0.131ms (1.6x faster than C Redis 0.210ms)**.
+
+---
+
+## 5. 🐹 Go Implementation Comparison (vs SugarDB)
+
+Identical machine (AMD Ryzen 5 5600X, 127.0.0.1 TCP), identical harness: `redis-benchmark -c 50 -n 50000 -d 128 -t set,get --threads 4`. SugarDB (latest, pure Go in-memory) ran in Docker with host networking.
+
+| Target | SET (ops/s) | GET (ops/s) | vs Nedis |
+|---|---|---|---|
+| **Nedis (Pure Go)** | **198,412** | **199,203** | — |
+| C Redis 8.0 | 99,800 | 100,000 | Nedis ≈ 2.0x faster |
+| SugarDB (Go) | 66,489 | 66,578 | Nedis ≈ 3.0x faster |
+
+**Conclusion**: Against SugarDB, the most actively maintained pure-Go in-memory Redis alternative, Nedis delivers roughly **3x higher throughput** under the same conditions.
