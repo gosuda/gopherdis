@@ -510,14 +510,14 @@ end`
 	results = append(results, r6C, r6N, r6S, r6G)
 
 	// ==========================================
-	// Benchmark 7: Real-World Cache at Scale (500k keys x 1KB values)
+	// Benchmark 7: Real-World Cache at Scale (2M keys x 1KB values)
 	// ==========================================
 	// Small benchmarks mostly expose fixed per-engine overhead (shard buffers,
-	// arena pools, allocator baseline). This workload loads ~512MB of actual
+	// arena pools, allocator baseline). This workload loads ~1.6GB of actual
 	// payload so the data itself dominates used_memory, showing how the
 	// per-engine memory profiles converge at realistic dataset sizes.
-	log.Println(">>> Running Benchmark 7: Real-World Cache at Scale (500k keys x 1KB)...")
-	const b7Ops = 500000
+	log.Println(">>> Running Benchmark 7: Real-World Cache at Scale (2M keys x 1KB)...")
+	const b7Ops = 2000000
 	const b7Clients = 50
 
 	bench7Work := func(workerID int, ops int, conn net.Conn, r *bufio.Reader) []float64 {
@@ -536,12 +536,12 @@ end`
 		return lats
 	}
 
-	r7C := runBenchmark("7. Real-World Cache (500k x 1KB)", "C Redis 8.0", "127.0.0.1:16379", b7Ops, b7Clients, bench7Work)
-	r7N := runBenchmark("7. Real-World Cache (500k x 1KB)", "Nedis (Go)", "127.0.0.1:16380", b7Ops, b7Clients, bench7Work)
-	r7S := runBenchmark("7. Real-World Cache (500k x 1KB)", "Nedis (Go SIMD)", "127.0.0.1:16382", b7Ops, b7Clients, bench7Work)
+	r7C := runBenchmark("7. Real-World Cache (2M x 1KB)", "C Redis 8.0", "127.0.0.1:16379", b7Ops, b7Clients, bench7Work)
+	r7N := runBenchmark("7. Real-World Cache (2M x 1KB)", "Nedis (Go)", "127.0.0.1:16380", b7Ops, b7Clients, bench7Work)
+	r7S := runBenchmark("7. Real-World Cache (2M x 1KB)", "Nedis (Go SIMD)", "127.0.0.1:16382", b7Ops, b7Clients, bench7Work)
 	// NOTE: SugarDB crashes (container exit 2, goroutine dump) under this
-	// 500k x 1KB workload, so it cannot be measured.
-	r7G := BenchResult{Name: "7. Real-World Cache (500k x 1KB)", Target: "SugarDB (Go)", NA: true}
+	// large multi-hundred-MB workload, so it cannot be measured.
+	r7G := BenchResult{Name: "7. Real-World Cache (2M x 1KB)", Target: "SugarDB (Go)", NA: true}
 	results = append(results, r7C, r7N, r7S, r7G)
 
 	// ==========================================
@@ -665,7 +665,7 @@ func writeMarkdownReport(results []BenchResult) {
 			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, p99Str, p999Str, formatBytes(r.MemoryUsed)))
 	}
 
-	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B. On workload 7 (500k keys × 1KB values), SugarDB's server process crashes (container exit 2 with a goroutine dump), so it is marked N/A there. Percentages in the P99/P99.9 columns are the delta versus the C Redis row of the same workload; negative is better (lower tail latency).\n")
+	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B. On workload 7 (2M keys × 1KB values), SugarDB's server process crashes (container exit 2 with a goroutine dump), so it is marked N/A there. Percentages in the P99/P99.9 columns are the delta versus the C Redis row of the same workload; negative is better (lower tail latency).\n")
 
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 4. 🔍 Deep-Dive Analysis by Scenario\n\n")
@@ -710,17 +710,17 @@ func writeMarkdownReport(results []BenchResult) {
 		sb.WriteString(fmt.Sprintf("- **Analysis**: In-place zero-reallocation bit mutation, `math/bits.OnesCount64` hardware acceleration, and 12KB Dense Otmar Ertl HLL registers achieve **%.1fk QPS (%.2fx C Redis)** with **P50 of %.3fms** and **P95 of %.3fms (vs C Redis %.3fms)**. SugarDB does not support SETBIT/BITCOUNT/PFADD (N/A).\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P95Latency, c.P95Latency))
 	}
 
-	sb.WriteString("### ⑦ Real-World Cache at Scale (500k keys × 1KB)\n")
-	sb.WriteString("- **Scenario**: 50 concurrent clients loading 500,000 cache entries with 1KB values (~512MB of payload), 80% SET / 20% GET. This approximates a production cache workload where the dataset itself dominates memory usage.\n")
+	sb.WriteString("### ⑦ Real-World Cache at Scale (2M keys × 1KB)\n")
+	sb.WriteString("- **Scenario**: 50 concurrent clients loading 1,600,000 cache entries with 1KB values (~1.6GB of payload), 80% SET / 20% GET. This approximates a production cache workload where the dataset itself dominates memory usage.\n")
 	if c, n := ana("7."); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, the memory gap narrows: Nedis grows **%s** vs C Redis **%s** (%.0f%% more), down from the multi-x ratio on the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 500k×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
+		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, the memory gap narrows: Nedis grows **%s** vs C Redis **%s** (%.0f%% more), down from the multi-x ratio on the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 2M×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
 	}
 
 	// §5: Go implementation comparison, derived from the suite-measured results
 	// above (same harness, same machine) — SugarDB is now a first-class target.
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 5. 🐹 Go Implementation Comparison (vs SugarDB)\n\n")
-	sb.WriteString("SugarDB is now measured as a first-class target in this suite (see §3), so the numbers below are taken directly from the suite-measured rows above — identical machine (AMD Ryzen 5 5600X), identical harness (direct RESP TCP, pre-connected pooled clients), SugarDB `latest` running in Docker with host networking. SugarDB supports only workloads 1–3; workloads 4–6 are N/A (unsupported), and it crashes under workload 7's 500k×1KB load.\n\n")
+	sb.WriteString("SugarDB is now measured as a first-class target in this suite (see §3), so the numbers below are taken directly from the suite-measured rows above — identical machine (AMD Ryzen 5 5600X), identical harness (direct RESP TCP, pre-connected pooled clients), SugarDB `latest` running in Docker with host networking. SugarDB supports only workloads 1–3; workloads 4–6 are N/A (unsupported), and it crashes under workload 7's 2M×1KB load.\n\n")
 	sb.WriteString("| Workload | Target | QPS (ops/s) | P50 (ms) | P95 (ms) | P99 (ms) | P99.9 (ms) |\n")
 	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|\n")
 	for _, b := range []string{"1.", "2.", "3."} {
@@ -749,9 +749,9 @@ func writeMarkdownReport(results []BenchResult) {
 
 	targets := []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"}
 
-	// At-scale comparison first: with ~512MB of real payload, the data itself
+	// At-scale comparison first: with ~1.6GB of real payload, the data itself
 	// dominates and per-engine overhead becomes a minor addend.
-	sb.WriteString("### At realistic dataset sizes (workload 7: 500k keys × 1KB values)\n\n")
+	sb.WriteString("### At realistic dataset sizes (workload 7: 2M keys × 1KB values)\n\n")
 	sb.WriteString("| Target | Memory Delta | vs C Redis |\n")
 	sb.WriteString("|---|:---:|:---:|\n")
 	var c7 *BenchResult
@@ -771,7 +771,11 @@ func writeMarkdownReport(results []BenchResult) {
 	}
 	if c7 != nil {
 		if n := find("7.", "Nedis (Go)"); n != nil && c7.MemoryUsed > 0 {
-			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~512MB of 1KB values) dominates `used_memory`, the gap between Nedis and C Redis narrows from the multi-x ratio seen on the small overhead-dominated workloads to a bounded addend (**%s** vs **%s**, %.0f%% difference). The per-key amplification (~1.9KB stored per 1KB key/value pair) comes from the 64-shard dict's pre-sized buckets and Go object headers; the fixed baseline overhead from the table below becomes proportionally smaller as data grows.\n", formatBytes(n.MemoryUsed), formatBytes(c7.MemoryUsed), float64(n.MemoryUsed-c7.MemoryUsed)/float64(c7.MemoryUsed)*100))
+			const b7Keys = 1600000 // 80% of 2M ops are SETs of distinct keys
+			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~1.6GB of 1KB values) dominates `used_memory`, the gap between Nedis and C Redis narrows from the multi-x ratio seen on the small overhead-dominated workloads to a bounded addend (**%s** vs **%s**, %.0f%% difference). The per-key amplification (%.1fKB vs %.1fKB stored per 1KB key/value pair) comes from the 64-shard dict's pre-sized buckets and Go object headers; the fixed baseline overhead from the table below becomes proportionally smaller as data grows.\n",
+				formatBytes(n.MemoryUsed), formatBytes(c7.MemoryUsed),
+				float64(n.MemoryUsed-c7.MemoryUsed)/float64(c7.MemoryUsed)*100,
+				float64(n.MemoryUsed)/b7Keys/1024, float64(c7.MemoryUsed)/b7Keys/1024))
 		}
 	}
 
