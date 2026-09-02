@@ -17,7 +17,7 @@
 
 ## ⚡ Performance: C Redis 8.0 vs Nedis
 
-Under identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Nedis delivers **1.2x to 2.5x higher throughput** across core workloads by replacing Redis's single-threaded event loop with a 64-shard concurrent architecture and zero-allocation memory arenas.
+Under identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Nedis delivers **1.3x to 2.4x higher throughput** across core workloads by replacing Redis's single-threaded event loop with a 64-shard concurrent architecture and zero-allocation memory arenas.
 
 ![C Redis 8.0 vs Nedis Standard Benchmark](benchmark_chart.svg?v=3)
 
@@ -25,20 +25,20 @@ Under identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux
 
 ### 📊 6-Dimensional Benchmark Summary
 
-| Workload | C Redis 8.0 | Nedis (Standard) | Nedis (SIMD/AVX2) | SugarDB (Go) | SIMD Speedup |
-|---|:---:|:---:|:---:|:---:|:---:|
-| **Concurrent SET / GET** (50 Clients) | 126,808 ops/s | 319,215 ops/s | **313,409 ops/s** | 90,102 ops/s | **2.47x** ⚡ (P50: **0.129ms**) |
-| **Multi-Field Hash** (5 Fields HSET/HMGET) | 115,388 ops/s | 195,558 ops/s | **191,316 ops/s** | 85,073 ops/s | **1.66x** ⚡ (P50: **0.103ms**) |
-| **SkipList Leaderboard** (ZADD/ZRANK/ZRANGE) | 121,979 ops/s | 194,470 ops/s | **193,523 ops/s** | 592,004 ops/s † | **1.59x** ⚡ (P50: **0.094ms**) |
-| **Stream Event Queue** (XADD/XRANGE) | 87,521 ops/s | 107,709 ops/s | **108,301 ops/s** | N/A | **1.24x** ⚡ (P50: **0.145ms**) |
-| **Redlock Lua Script** (Bytecode JIT) | 110,804 ops/s | 130,485 ops/s | **134,544 ops/s** | N/A | **1.21x** ⚡ (P50: **0.133ms**) |
-| **Bitmap & HyperLogLog** (POPCNT / Dense HLL) | 130,965 ops/s | 213,186 ops/s | **215,248 ops/s** | N/A | **1.64x** ⚡ (P50: **0.092ms**) |
+| Workload | C Redis 8.0 | Nedis (Standard) | Nedis (SIMD/AVX2) | SugarDB (Go) | SIMD Speedup | SIMD P99 / P99.9 (ms) |
+|---|:---:|:---:|:---:|:---:|:---:|:---:|
+| **Concurrent SET / GET** (50 Clients) | 133,211 ops/s | 296,553 ops/s | **312,358 ops/s** | 97,679 ops/s | **2.35x** ⚡ (P50: **0.138ms**) | **0.542** / **1.279** |
+| **Multi-Field Hash** (5 Fields HSET/HMGET) | 116,930 ops/s | 152,937 ops/s | **189,946 ops/s** | 94,610 ops/s | **1.62x** ⚡ (P50: **0.102ms**) | **0.246** / **0.547** |
+| **SkipList Leaderboard** (ZADD/ZRANK/ZRANGE) | 123,174 ops/s | 167,198 ops/s | **165,103 ops/s** | 656,722 ops/s † | **1.34x** ⚡ (P50: **0.112ms**) | **0.349** / **1.261** |
+| **Stream Event Queue** (XADD/XRANGE) | 82,268 ops/s | 110,031 ops/s | **110,977 ops/s** | N/A | **1.35x** ⚡ (P50: **0.139ms**) | **0.838** / **1.645** |
+| **Redlock Lua Script** (Bytecode JIT) | 112,896 ops/s | 155,053 ops/s | **154,827 ops/s** | N/A | **1.37x** ⚡ (P50: **0.108ms**) | **0.465** / **5.943** |
+| **Bitmap & HyperLogLog** (POPCNT / Dense HLL) | 128,573 ops/s | 213,633 ops/s | **204,987 ops/s** | N/A | **1.59x** ⚡ (P50: **0.092ms**) | **0.244** / **1.204** |
 
 > † SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics and returns empty sets under this index-range workload, so its ZSet QPS is not apples-to-apples. SugarDB does not support Streams, Lua scripting, or Bitmap/HLL commands (N/A).
 >
-> 📖 Detailed methodology, latencies (P50/P95/P99), and memory profiles are documented in [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md).
+> 📖 Detailed methodology, latencies (P50/P95/P99/P99.9), and memory profiles are documented in [BENCHMARK_REPORT.md](BENCHMARK_REPORT.md).
 >
-> 🐹 **vs other Go implementations**: in this benchmark suite on the same machine, Nedis (~319k ops/s SET/GET) is roughly **3.5x faster than SugarDB** (~90k ops/s), the leading pure-Go in-memory Redis alternative. See [BENCHMARK_REPORT.md §5](BENCHMARK_REPORT.md).
+> 🐹 **vs other Go implementations**: in this benchmark suite on the same machine, Nedis (~297k ops/s SET/GET) is roughly **3.0x faster than SugarDB** (~98k ops/s), the leading pure-Go in-memory Redis alternative. See [BENCHMARK_REPORT.md §5](BENCHMARK_REPORT.md).
 
 ---
 

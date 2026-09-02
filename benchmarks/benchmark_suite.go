@@ -26,6 +26,7 @@ type BenchResult struct {
 	P50Latency  float64 // ms
 	P95Latency  float64 // ms
 	P99Latency  float64 // ms
+	P999Latency float64 // ms
 	MemoryUsed  int64   // bytes
 	ExtraMetric string
 	NA          bool // target does not support this workload
@@ -174,24 +175,31 @@ func runBenchmark(name string, target string, addr string, totalOps int, concurr
 	p50 := 0.0
 	p95 := 0.0
 	p99 := 0.0
+	p999 := 0.0
 	if len(allLatencies) > 0 {
 		p50 = allLatencies[int(float64(len(allLatencies))*0.50)]
 		p95 = allLatencies[int(float64(len(allLatencies))*0.95)]
 		p99 = allLatencies[int(float64(len(allLatencies))*0.99)]
+		p999Idx := int(float64(len(allLatencies)) * 0.999)
+		if p999Idx >= len(allLatencies) {
+			p999Idx = len(allLatencies) - 1
+		}
+		p999 = allLatencies[p999Idx]
 	}
 
 	qps := float64(totalOps) / duration.Seconds()
 
 	return BenchResult{
-		Name:       name,
-		Target:     target,
-		TotalOps:   totalOps,
-		Duration:   duration,
-		QPS:        qps,
-		P50Latency: p50,
-		P95Latency: p95,
-		P99Latency: p99,
-		MemoryUsed: memGrowth,
+		Name:        name,
+		Target:      target,
+		TotalOps:    totalOps,
+		Duration:    duration,
+		QPS:         qps,
+		P50Latency:  p50,
+		P95Latency:  p95,
+		P99Latency:  p99,
+		P999Latency: p999,
+		MemoryUsed:  memGrowth,
 	}
 }
 
@@ -481,8 +489,8 @@ end`
 	fmt.Fprintln(logFile, "==========================================================================================================================")
 	fmt.Fprintln(logFile, "               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                       ")
 	fmt.Fprintln(logFile, "==========================================================================================================================")
-	fmt.Fprintf(logFile, "%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
-		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "RAM Growth")
+	fmt.Fprintf(logFile, "%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-9s | %-12s\n",
+		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "P99.9 (ms)", "RAM Growth")
 	fmt.Fprintln(logFile, "--------------------------------------------------------------------------------------------------------------------------")
 
 	for _, r := range results {
@@ -490,8 +498,8 @@ end`
 			fmt.Fprintf(logFile, "%-35s | %-14s | %-68s\n", r.Name, r.Target, "N/A (unsupported)")
 			continue
 		}
-		fmt.Fprintf(logFile, "%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
-			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed))
+		fmt.Fprintf(logFile, "%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
+			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency, formatBytes(r.MemoryUsed))
 	}
 	fmt.Fprintln(logFile, "==========================================================================================================================")
 
@@ -499,8 +507,8 @@ end`
 	fmt.Println("\n==========================================================================================================================")
 	fmt.Println("               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                       ")
 	fmt.Println("==========================================================================================================================")
-	fmt.Printf("%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
-		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "RAM Growth")
+	fmt.Printf("%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-9s | %-12s\n",
+		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "P99.9 (ms)", "RAM Growth")
 	fmt.Println("--------------------------------------------------------------------------------------------------------------------------")
 
 	for _, r := range results {
@@ -508,8 +516,8 @@ end`
 			fmt.Printf("%-35s | %-14s | %-68s\n", r.Name, r.Target, "N/A (unsupported)")
 			continue
 		}
-		fmt.Printf("%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
-			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed))
+		fmt.Printf("%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
+			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency, formatBytes(r.MemoryUsed))
 	}
 	fmt.Println("==========================================================================================================================")
 
@@ -559,20 +567,20 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("![C Redis vs Nedis Benchmark Chart](benchmark_chart.svg)\n\n")
 
 	sb.WriteString("## 3. 📋 Benchmark Summary Table\n\n")
-	sb.WriteString("| Workload Scenario | Target Engine | Total Ops | Throughput (QPS) | P50 Latency (ms) | P95 Latency (ms) | P99 Latency (ms) | Memory Delta |\n")
-	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|:---:|\n")
+	sb.WriteString("| Workload Scenario | Target Engine | Total Ops | Throughput (QPS) | P50 Latency (ms) | P95 Latency (ms) | P99 Latency (ms) | P99.9 Latency (ms) | Memory Delta |\n")
+	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|:---:|:---:|\n")
 
 	for _, r := range results {
 		if r.NA {
-			sb.WriteString(fmt.Sprintf("| %s | **%s** | N/A (unsupported) | — | — | — | — | — |\n", r.Name, r.Target))
+			sb.WriteString(fmt.Sprintf("| %s | **%s** | N/A (unsupported) | — | — | — | — | — | — |\n", r.Name, r.Target))
 			continue
 		}
 		speedRatio := ""
 		if strings.Contains(r.Target, "Nedis") {
 			speedRatio = " ⚡"
 		}
-		sb.WriteString(fmt.Sprintf("| %s | **%s** | %d | **%.0f ops/s**%s | %.3f ms | %.3f ms | **%.3f ms** | %s |\n",
-			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed)))
+		sb.WriteString(fmt.Sprintf("| %s | **%s** | %d | **%.0f ops/s**%s | %.3f ms | %.3f ms | **%.3f ms** | **%.3f ms** | %s |\n",
+			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency, formatBytes(r.MemoryUsed)))
 	}
 
 	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B.\n")
@@ -632,13 +640,13 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 5. 🐹 Go Implementation Comparison (vs SugarDB)\n\n")
 	sb.WriteString("SugarDB is now measured as a first-class target in this suite (see §3), so the numbers below are taken directly from the suite-measured rows above — identical machine (AMD Ryzen 5 5600X), identical harness (direct RESP TCP, pre-connected pooled clients), SugarDB `latest` running in Docker with host networking. SugarDB supports only workloads 1–3; workloads 4–6 are N/A (unsupported).\n\n")
-	sb.WriteString("| Workload | Target | QPS (ops/s) | P50 (ms) | P95 (ms) | P99 (ms) |\n")
-	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|\n")
+	sb.WriteString("| Workload | Target | QPS (ops/s) | P50 (ms) | P95 (ms) | P99 (ms) | P99.9 (ms) |\n")
+	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|\n")
 	for _, b := range []string{"1.", "2.", "3."} {
 		for _, t := range []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"} {
 			if r := find(b, t); r != nil {
-				sb.WriteString(fmt.Sprintf("| %s | **%s** | **%.0f** | %.3f | %.3f | %.3f |\n",
-					r.Name, r.Target, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency))
+				sb.WriteString(fmt.Sprintf("| %s | **%s** | **%.0f** | %.3f | %.3f | %.3f | %.3f |\n",
+					r.Name, r.Target, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency))
 			}
 		}
 	}
