@@ -28,6 +28,7 @@ type BenchResult struct {
 	P99Latency  float64 // ms
 	MemoryUsed  int64   // bytes
 	ExtraMetric string
+	NA          bool // target does not support this workload
 }
 
 func sendCommand(conn net.Conn, r *bufio.Reader, args ...string) (string, error) {
@@ -228,7 +229,38 @@ func main() {
 		_ = simdCmd.Wait()
 	}()
 
+	// 4. Start SugarDB (pure Go) on 16381 via Docker
+	log.Println("[Setup] Starting SugarDB (Docker) on :16381...")
+	_ = exec.Command("docker", "rm", "-f", "sugardb-bench").Run()
+	sugarCmd := exec.Command("docker", "run", "-d", "--name", "sugardb-bench", "--network", "host",
+		"echovault/sugardb:latest", "--bind-addr", "127.0.0.1", "--port", "16381", "--data-dir", "/tmp/sugardb-data")
+	if out, err := sugarCmd.CombinedOutput(); err != nil {
+		log.Fatalf("Failed to start SugarDB: %v (%s)", err, out)
+	}
+	defer func() {
+		_ = exec.Command("docker", "rm", "-f", "sugardb-bench").Run()
+	}()
+
 	time.Sleep(400 * time.Millisecond)
+
+	// Wait until all targets accept connections
+	for _, addr := range []string{"127.0.0.1:16379", "127.0.0.1:16380", "127.0.0.1:16381", "127.0.0.1:16382"} {
+		for i := 0; i < 50; i++ {
+			c, err := net.DialTimeout("tcp", addr, 500*time.Millisecond)
+			if err == nil {
+				r := bufio.NewReader(c)
+				if _, err := sendCommand(c, r, "PING"); err == nil {
+					c.Close()
+					break
+				}
+				c.Close()
+			}
+			if i == 49 {
+				log.Fatalf("Target %s did not become ready", addr)
+			}
+			time.Sleep(200 * time.Millisecond)
+		}
+	}
 
 	logFile, err := os.Create("/home/yjlee/redis-go/nedis/BENCHMARK_RESULTS.log")
 	if err != nil {
@@ -264,7 +296,8 @@ func main() {
 	r1C := runBenchmark("1. Concurrency Throughput (SET/GET)", "C Redis 8.0", "127.0.0.1:16379", b1Ops, b1Clients, bench1Work)
 	r1N := runBenchmark("1. Concurrency Throughput (SET/GET)", "Nedis (Go)", "127.0.0.1:16380", b1Ops, b1Clients, bench1Work)
 	r1S := runBenchmark("1. Concurrency Throughput (SET/GET)", "Nedis (Go SIMD)", "127.0.0.1:16382", b1Ops, b1Clients, bench1Work)
-	results = append(results, r1C, r1N, r1S)
+	r1G := runBenchmark("1. Concurrency Throughput (SET/GET)", "SugarDB (Go)", "127.0.0.1:16381", b1Ops, b1Clients, bench1Work)
+	results = append(results, r1C, r1N, r1S, r1G)
 
 	// ==========================================
 	// Benchmark 2: Multi-Field Hash Aggregation
@@ -291,7 +324,8 @@ func main() {
 	r2C := runBenchmark("2. Multi-Field Hash Aggregation", "C Redis 8.0", "127.0.0.1:16379", b2Ops, b2Clients, bench2Work)
 	r2N := runBenchmark("2. Multi-Field Hash Aggregation", "Nedis (Go)", "127.0.0.1:16380", b2Ops, b2Clients, bench2Work)
 	r2S := runBenchmark("2. Multi-Field Hash Aggregation", "Nedis (Go SIMD)", "127.0.0.1:16382", b2Ops, b2Clients, bench2Work)
-	results = append(results, r2C, r2N, r2S)
+	r2G := runBenchmark("2. Multi-Field Hash Aggregation", "SugarDB (Go)", "127.0.0.1:16381", b2Ops, b2Clients, bench2Work)
+	results = append(results, r2C, r2N, r2S, r2G)
 
 	// ==========================================
 	// Benchmark 3: Ranked SkipList Leaderboard (ZSet)
@@ -322,7 +356,10 @@ func main() {
 	r3C := runBenchmark("3. SkipList Leaderboard (ZSet)", "C Redis 8.0", "127.0.0.1:16379", b3Ops, b3Clients, bench3Work)
 	r3N := runBenchmark("3. SkipList Leaderboard (ZSet)", "Nedis (Go)", "127.0.0.1:16380", b3Ops, b3Clients, bench3Work)
 	r3S := runBenchmark("3. SkipList Leaderboard (ZSet)", "Nedis (Go SIMD)", "127.0.0.1:16382", b3Ops, b3Clients, bench3Work)
-	results = append(results, r3C, r3N, r3S)
+	// NOTE: SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics, not index-range;
+	// the workload still executes without errors but range queries return empty sets.
+	r3G := runBenchmark("3. SkipList Leaderboard (ZSet)", "SugarDB (Go)", "127.0.0.1:16381", b3Ops, b3Clients, bench3Work)
+	results = append(results, r3C, r3N, r3S, r3G)
 
 	// ==========================================
 	// Benchmark 4: Stream Event Queue (XADD / XREADGROUP)
@@ -348,7 +385,8 @@ func main() {
 	r4C := runBenchmark("4. Stream Queue (XADD/XRANGE)", "C Redis 8.0", "127.0.0.1:16379", b4Ops, b4Clients, bench4Work)
 	r4N := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Nedis (Go)", "127.0.0.1:16380", b4Ops, b4Clients, bench4Work)
 	r4S := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Nedis (Go SIMD)", "127.0.0.1:16382", b4Ops, b4Clients, bench4Work)
-	results = append(results, r4C, r4N, r4S)
+	r4G := BenchResult{Name: "4. Stream Queue (XADD/XRANGE)", Target: "SugarDB (Go)", NA: true} // XADD/XRANGE unsupported
+	results = append(results, r4C, r4N, r4S, r4G)
 
 	// ==========================================
 	// Benchmark 5: Redlock Distributed Atomic Lua Scripting
@@ -402,7 +440,8 @@ end`
 	r5C := runBenchmark("5. Redlock Atomic Lua Scripting", "C Redis 8.0", "127.0.0.1:16379", b5Ops, b5Clients, bench5Work(shaC))
 	r5N := runBenchmark("5. Redlock Atomic Lua Scripting", "Nedis (Go)", "127.0.0.1:16380", b5Ops, b5Clients, bench5Work(shaN))
 	r5S := runBenchmark("5. Redlock Atomic Lua Scripting", "Nedis (Go SIMD)", "127.0.0.1:16382", b5Ops, b5Clients, bench5Work(shaS))
-	results = append(results, r5C, r5N, r5S)
+	r5G := BenchResult{Name: "5. Redlock Atomic Lua Scripting", Target: "SugarDB (Go)", NA: true} // EVAL/SCRIPT unsupported
+	results = append(results, r5C, r5N, r5S, r5G)
 
 	// ==========================================
 	// Benchmark 6: Bitmaps & HyperLogLog Cardinality
@@ -433,34 +472,43 @@ end`
 	r6C := runBenchmark("6. Bitmap & HyperLogLog", "C Redis 8.0", "127.0.0.1:16379", b6Ops, b6Clients, bench6Work)
 	r6N := runBenchmark("6. Bitmap & HyperLogLog", "Nedis (Go)", "127.0.0.1:16380", b6Ops, b6Clients, bench6Work)
 	r6S := runBenchmark("6. Bitmap & HyperLogLog", "Nedis (Go SIMD)", "127.0.0.1:16382", b6Ops, b6Clients, bench6Work)
-	results = append(results, r6C, r6N, r6S)
+	r6G := BenchResult{Name: "6. Bitmap & HyperLogLog", Target: "SugarDB (Go)", NA: true} // SETBIT/BITCOUNT/PFADD unsupported
+	results = append(results, r6C, r6N, r6S, r6G)
 
 	// ==========================================
 	// Print & Write Results
 	// ==========================================
 	fmt.Fprintln(logFile, "==========================================================================================================================")
-	fmt.Fprintln(logFile, "                           REDIS 8.0 (C) vs NEDIS (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                                ")
+	fmt.Fprintln(logFile, "               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                       ")
 	fmt.Fprintln(logFile, "==========================================================================================================================")
-	fmt.Fprintf(logFile, "%-35s | %-12s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
+	fmt.Fprintf(logFile, "%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
 		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "RAM Growth")
 	fmt.Fprintln(logFile, "--------------------------------------------------------------------------------------------------------------------------")
 
 	for _, r := range results {
-		fmt.Fprintf(logFile, "%-35s | %-12s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
+		if r.NA {
+			fmt.Fprintf(logFile, "%-35s | %-14s | %-68s\n", r.Name, r.Target, "N/A (unsupported)")
+			continue
+		}
+		fmt.Fprintf(logFile, "%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
 			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed))
 	}
 	fmt.Fprintln(logFile, "==========================================================================================================================")
 
 	// Also print to stdout
 	fmt.Println("\n==========================================================================================================================")
-	fmt.Println("                           REDIS 8.0 (C) vs NEDIS (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                                ")
+	fmt.Println("               REDIS 8.0 (C) vs NEDIS (PURE GO) vs SUGARDB (PURE GO) 6-DIMENSIONAL BENCHMARK REPORT                       ")
 	fmt.Println("==========================================================================================================================")
-	fmt.Printf("%-35s | %-12s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
+	fmt.Printf("%-35s | %-14s | %-10s | %-12s | %-9s | %-9s | %-9s | %-12s\n",
 		"Benchmark Suite", "Target", "Total Ops", "QPS (ops/s)", "P50 (ms)", "P95 (ms)", "P99 (ms)", "RAM Growth")
 	fmt.Println("--------------------------------------------------------------------------------------------------------------------------")
 
 	for _, r := range results {
-		fmt.Printf("%-35s | %-12s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
+		if r.NA {
+			fmt.Printf("%-35s | %-14s | %-68s\n", r.Name, r.Target, "N/A (unsupported)")
+			continue
+		}
+		fmt.Printf("%-35s | %-14s | %-10d | %-12.0f | %-9.3f | %-9.3f | %-9.3f | %-12s\n",
 			r.Name, r.Target, r.TotalOps, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed))
 	}
 	fmt.Println("==========================================================================================================================")
@@ -492,8 +540,8 @@ func writeMarkdownReport(results []BenchResult) {
 	defer mdFile.Close()
 
 	var sb strings.Builder
-	sb.WriteString("# 📊 C Redis 8.0 vs Nedis (Pure Go) 6-Dimensional Benchmark Analysis Report\n\n")
-	sb.WriteString("This document details the multi-dimensional benchmark methodology and performance comparison results between official C Redis 8.0 and Nedis (Pure Go Redis-compatible store), executed under an identical hardware and local loopback TCP network environment.\n\n")
+	sb.WriteString("# 📊 C Redis 8.0 vs Nedis (Pure Go) vs SugarDB (Pure Go) 6-Dimensional Benchmark Analysis Report\n\n")
+	sb.WriteString("This document details the multi-dimensional benchmark methodology and performance comparison results between official C Redis 8.0, Nedis (Pure Go Redis-compatible store), and SugarDB (Pure Go in-memory Redis alternative, running in Docker with host networking), executed under an identical hardware and local loopback TCP network environment.\n\n")
 
 	sb.WriteString("## 1. ⚙️ System Environment & Test Setup\n\n")
 	sb.WriteString("| Parameter | Specification |\n")
@@ -503,7 +551,8 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("| **Operating System & Kernel** | Debian GNU/Linux (Trixie/Sid), Kernel `6.12.101+deb13-amd64` (SMP PREEMPT_DYNAMIC) |\n")
 	sb.WriteString("| **Go Compiler** | `go version go1.24.4 linux/amd64` |\n")
 	sb.WriteString("| **C Redis Version** | Redis server v=8.0.2 (sha=00000000:0, malloc=jemalloc-5.3.0, 64-bit) |\n")
-	sb.WriteString("| **Network Interface** | Local Loopback TCP (`127.0.0.1:16379` vs `127.0.0.1:16380`) |\n")
+	sb.WriteString("| **SugarDB Version** | `echovault/sugardb:latest` (Docker, host networking, port 16381) |\n")
+	sb.WriteString("| **Network Interface** | Local Loopback TCP (`127.0.0.1:16379` / `:16380` / `:16381` / `:16382`) |\n")
 	sb.WriteString("| **Benchmark Protocol** | RESP2 / RESP3 direct TCP socket streaming with pre-connected connection pooling |\n\n")
 
 	sb.WriteString("## 2. 📈 Performance Visualization\n\n")
@@ -514,6 +563,10 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|:---:|\n")
 
 	for _, r := range results {
+		if r.NA {
+			sb.WriteString(fmt.Sprintf("| %s | **%s** | N/A (unsupported) | — | — | — | — | — |\n", r.Name, r.Target))
+			continue
+		}
 		speedRatio := ""
 		if strings.Contains(r.Target, "Nedis") {
 			speedRatio = " ⚡"
@@ -522,31 +575,81 @@ func writeMarkdownReport(results []BenchResult) {
 			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, r.P99Latency, formatBytes(r.MemoryUsed)))
 	}
 
+	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B.\n")
+
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 4. 🔍 Deep-Dive Analysis by Scenario\n\n")
+
+	// find locates a measured (non-N/A) result row by benchmark name prefix and target.
+	find := func(namePrefix, target string) *BenchResult {
+		for i := range results {
+			if strings.HasPrefix(results[i].Name, namePrefix) && results[i].Target == target && !results[i].NA {
+				return &results[i]
+			}
+		}
+		return nil
+	}
+	ana := func(b string) (c, n *BenchResult) { return find(b, "C Redis 8.0"), find(b, "Nedis (Go)") }
+
 	sb.WriteString("### ① High-Concurrency SET/GET Throughput\n")
 	sb.WriteString("- **Scenario**: 50 concurrent client connections, 50,000 operations with 128-byte payloads.\n")
-	sb.WriteString("- **Analysis**: Nedis utilizes a **64-shard contention-free architecture**, socket-level `TCP_NODELAY`, and Beaver Arena memory pooling across 12 CPU hardware threads. It achieves **349k QPS (3.15x higher than C Redis)** with superior tail latency (**P99: 0.547ms vs 0.938ms**).\n\n")
+	if c, n := ana("1."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: Nedis utilizes a **64-shard contention-free architecture**, socket-level `TCP_NODELAY`, and Beaver Arena memory pooling across 12 CPU hardware threads. It achieves **%.0fk QPS (%.2fx higher than C Redis)** with comparable tail latency (**P99: %.3fms vs C Redis %.3fms**). SugarDB reaches %.0fk QPS (Nedis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P99Latency, c.P99Latency, find("1.", "SugarDB (Go)").QPS/1000, n.QPS/find("1.", "SugarDB (Go)").QPS))
+	}
 
 	sb.WriteString("### ② Multi-Field Hash Aggregation\n")
 	sb.WriteString("- **Scenario**: 20 concurrent clients, 5-field HSET and HMGET operations across 20,000 requests.\n")
-	sb.WriteString("- **Analysis**: With **Hybrid Flat-Dict (contiguous array pairs for <= 64 entries + automatic hash map promotion)** and single-pass RESP buffer serialization, Nedis delivers **274k QPS (2.39x C Redis)**, **P50 of 0.056ms**, and **P99 of 0.220ms (vs C Redis 0.306ms)**.\n\n")
+	if c, n := ana("2."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: With **Hybrid Flat-Dict (contiguous array pairs for <= 64 entries + automatic hash map promotion)** and single-pass RESP buffer serialization, Nedis delivers **%.0fk QPS (%.2fx C Redis)**, **P50 of %.3fms**, and **P99 of %.3fms (vs C Redis %.3fms)**. SugarDB reaches %.0fk QPS (Nedis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P99Latency, c.P99Latency, find("2.", "SugarDB (Go)").QPS/1000, n.QPS/find("2.", "SugarDB (Go)").QPS))
+	}
 
 	sb.WriteString("### ③ Ranked SkipList Leaderboard (ZSet)\n")
 	sb.WriteString("- **Scenario**: 2,000 simulated players with real-time score updates (ZADD), rank lookups (ZRANK), and top-N range queries (ZRANGE).\n")
-	sb.WriteString("- **Analysis**: Lightweight Mutex synchronization, lock-free `math/rand/v2` level generation, and stack-allocated node arrays achieve **292k QPS (2.54x C Redis)**, with **P95 (0.104ms vs 0.239ms)** and **P99 (0.178ms vs 0.315ms)** outperforming C Redis by nearly 2x.\n\n")
+	if c, n := ana("3."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: Lightweight Mutex synchronization, lock-free `math/rand/v2` level generation, and stack-allocated node arrays achieve **%.0fk QPS (%.2fx C Redis)**, with **P95 (%.3fms vs %.3fms)** and **P99 (%.3fms vs %.3fms)**. (SugarDB's ZRANGE uses score-range semantics and returns empty sets here, so its %.0fk QPS is not an apples-to-apples comparison.)\n\n", n.QPS/1000, n.QPS/c.QPS, n.P95Latency, c.P95Latency, n.P99Latency, c.P99Latency, find("3.", "SugarDB (Go)").QPS/1000))
+	}
 
 	sb.WriteString("### ④ Stream Event Queue (XADD / XRANGE)\n")
 	sb.WriteString("- **Scenario**: 20 concurrent producers and consumers logging sensor telemetry events and querying ranges across 20,000 records.\n")
-	sb.WriteString("- **Analysis**: O(1) chunk boundary skipping and `AddRaw` zero-copy parsing yield **141.2k QPS (1.89x C Redis)** with **P50 of 0.108ms (2.3x faster)** and **P95 of 0.300ms (faster than C Redis 0.385ms)**.\n\n")
+	if c, n := ana("4."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: O(1) chunk boundary skipping and `AddRaw` zero-copy parsing yield **%.1fk QPS (%.2fx C Redis)** with **P50 of %.3fms** and **P95 of %.3fms (vs C Redis %.3fms)**. SugarDB does not support Streams (N/A).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P95Latency, c.P95Latency))
+	}
 
 	sb.WriteString("### ⑤ Redlock Atomic Lua Scripting (Bytecode JIT Cache)\n")
 	sb.WriteString("- **Scenario**: 20 workers competing for 100 distributed lock keys with atomic Lua release scripts.\n")
-	sb.WriteString("- **Analysis**: Pre-compiled `FunctionProto` caching, VM table reuse, and zero-alloc `redis.call` argument conversions produce **182.6k QPS (1.72x C Redis)** with **P50 of 0.064ms**, **P95 of 0.149ms**, and **P99 of 0.271ms (vs C Redis 0.329ms)**.\n\n")
+	if c, n := ana("5."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: Pre-compiled `FunctionProto` caching, VM table reuse, and zero-alloc `redis.call` argument conversions produce **%.1fk QPS (%.2fx C Redis)** with **P50 of %.3fms**, **P95 of %.3fms**, and **P99 of %.3fms (vs C Redis %.3fms)**. SugarDB does not support EVAL/SCRIPT LOAD (N/A).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P95Latency, n.P99Latency, c.P99Latency))
+	}
 
 	sb.WriteString("### ⑥ Bitmap & HyperLogLog Cardinality Estimation\n")
 	sb.WriteString("- **Scenario**: 100,000 bit mutations with SETBIT, 64-bit word POPCNT BITCOUNT, and 50,000 unique IP insertions with PFADD/PFCOUNT.\n")
-	sb.WriteString("- **Analysis**: In-place zero-reallocation bit mutation, `math/bits.OnesCount64` hardware acceleration, and 12KB Dense Otmar Ertl HLL registers achieve **274.3k QPS (2.24x C Redis)** with **P50 of 0.056ms** and **P95 of 0.131ms (1.6x faster than C Redis 0.210ms)**.\n")
+	if c, n := ana("6."); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("- **Analysis**: In-place zero-reallocation bit mutation, `math/bits.OnesCount64` hardware acceleration, and 12KB Dense Otmar Ertl HLL registers achieve **%.1fk QPS (%.2fx C Redis)** with **P50 of %.3fms** and **P95 of %.3fms (vs C Redis %.3fms)**. SugarDB does not support SETBIT/BITCOUNT/PFADD (N/A).\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P95Latency, c.P95Latency))
+	}
+
+	// §5: Go implementation comparison, derived from the suite-measured results
+	// above (same harness, same machine) — SugarDB is now a first-class target.
+	sb.WriteString("\n---\n\n")
+	sb.WriteString("## 5. 🐹 Go Implementation Comparison (vs SugarDB)\n\n")
+	sb.WriteString("SugarDB is now measured as a first-class target in this suite (see §3), so the numbers below are taken directly from the suite-measured rows above — identical machine (AMD Ryzen 5 5600X), identical harness (direct RESP TCP, pre-connected pooled clients), SugarDB `latest` running in Docker with host networking. SugarDB supports only workloads 1–3; workloads 4–6 are N/A (unsupported).\n\n")
+	sb.WriteString("| Workload | Target | QPS (ops/s) | P50 (ms) | P95 (ms) | P99 (ms) |\n")
+	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|\n")
+	for _, b := range []string{"1.", "2.", "3."} {
+		for _, t := range []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"} {
+			if r := find(b, t); r != nil {
+				sb.WriteString(fmt.Sprintf("| %s | **%s** | **%.0f** | %.3f | %.3f | %.3f |\n",
+					r.Name, r.Target, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency))
+			}
+		}
+	}
+	if n, g := find("1.", "Nedis (Go)"), find("1.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
+		sb.WriteString(fmt.Sprintf("\nThroughput (SET/GET, workload 1): Nedis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
+	}
+	if n, g := find("2.", "Nedis (Go)"), find("2.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
+		sb.WriteString(fmt.Sprintf(" Hash workload: Nedis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
+	}
+	sb.WriteString(" On workload 3 (ZSet), SugarDB's ZRANGE implements score-range rather than index-range semantics and returns empty sets under this workload, so its raw QPS is not comparable; Nedis and C Redis perform real index-range scans. SugarDB cannot run workloads 4–6 at all.\n")
+	sb.WriteString("\n**Conclusion**: Against SugarDB, the most actively maintained pure-Go in-memory Redis alternative, Nedis delivers substantially higher throughput on the comparable workloads under identical suite conditions, and additionally supports Streams, Lua scripting, Bitmaps, and HyperLogLog, which SugarDB lacks entirely.\n")
 
 	_, _ = mdFile.WriteString(sb.String())
 }
