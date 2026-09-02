@@ -601,6 +601,16 @@ func formatBytes(b int64) string {
 	return fmt.Sprintf("%.2f %cB", float64(b)/float64(div), "KMGTPE"[exp])
 }
 
+// findRow locates a measured (non-N/A) result row by benchmark name prefix and target.
+func findRow(results []BenchResult, namePrefix, target string) *BenchResult {
+	for i := range results {
+		if strings.HasPrefix(results[i].Name, namePrefix) && results[i].Target == target && !results[i].NA {
+			return &results[i]
+		}
+	}
+	return nil
+}
+
 func writeMarkdownReport(results []BenchResult) {
 	mdFile, err := os.Create("/home/yjlee/redis-go/nedis/BENCHMARK_REPORT.md")
 	if err != nil {
@@ -640,24 +650,28 @@ func writeMarkdownReport(results []BenchResult) {
 		if strings.Contains(r.Target, "Nedis") {
 			speedRatio = " ⚡"
 		}
-		sb.WriteString(fmt.Sprintf("| %s | **%s** | %d | **%.0f ops/s**%s | %.3f ms | %.3f ms | **%.3f ms** | **%.3f ms** | %s |\n",
-			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency, formatBytes(r.MemoryUsed)))
+		// Tail-latency delta vs the C Redis row of the same workload.
+		// Negative is better (lower latency).
+		p99Str := fmt.Sprintf("**%.3f ms**", r.P99Latency)
+		p999Str := fmt.Sprintf("**%.3f ms**", r.P999Latency)
+		if r.Target != "C Redis 8.0" {
+			wPrefix := r.Name[:strings.Index(r.Name, ".")+1]
+			if c := findRow(results, wPrefix, "C Redis 8.0"); c != nil && c.P99Latency > 0 {
+				p99Str += fmt.Sprintf(" (%+.0f%%)", (r.P99Latency-c.P99Latency)/c.P99Latency*100)
+				p999Str += fmt.Sprintf(" (%+.0f%%)", (r.P999Latency-c.P999Latency)/c.P999Latency*100)
+			}
+		}
+		sb.WriteString(fmt.Sprintf("| %s | **%s** | %d | **%.0f ops/s**%s | %.3f ms | %.3f ms | %s | %s | %s |\n",
+			r.Name, r.Target, r.TotalOps, r.QPS, speedRatio, r.P50Latency, r.P95Latency, p99Str, p999Str, formatBytes(r.MemoryUsed)))
 	}
 
-	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B. On workload 7 (500k keys × 1KB values), SugarDB's server process crashes (container exit 2 with a goroutine dump), so it is marked N/A there.\n")
+	sb.WriteString("\n> **Notes**: SugarDB does not support Streams (XADD/XRANGE), Lua scripting (EVAL/SCRIPT LOAD), Bitmaps (SETBIT/BITCOUNT), or HyperLogLog (PFADD) — verified empirically via `redis-cli` error replies — so those workloads are marked N/A. SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics rather than index-range, so its ZSet range queries return empty sets under this workload; the row is still measured. SugarDB does not support `INFO memory`, so its Memory Delta is reported as 0 B. On workload 7 (500k keys × 1KB values), SugarDB's server process crashes (container exit 2 with a goroutine dump), so it is marked N/A there. Percentages in the P99/P99.9 columns are the delta versus the C Redis row of the same workload; negative is better (lower tail latency).\n")
 
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 4. 🔍 Deep-Dive Analysis by Scenario\n\n")
 
 	// find locates a measured (non-N/A) result row by benchmark name prefix and target.
-	find := func(namePrefix, target string) *BenchResult {
-		for i := range results {
-			if strings.HasPrefix(results[i].Name, namePrefix) && results[i].Target == target && !results[i].NA {
-				return &results[i]
-			}
-		}
-		return nil
-	}
+	find := func(namePrefix, target string) *BenchResult { return findRow(results, namePrefix, target) }
 	ana := func(b string) (c, n *BenchResult) { return find(b, "C Redis 8.0"), find(b, "Nedis (Go)") }
 
 	sb.WriteString("### ① High-Concurrency SET/GET Throughput\n")
