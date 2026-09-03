@@ -6,6 +6,7 @@
 
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://golang.org)
 [![Compatibility](https://img.shields.io/badge/Redis%20Compatibility-100%25%20(RESP2%20%26%20RESP3)-E10098?style=flat&logo=redis)](https://redis.io)
+[![CI Tests](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml/badge.svg)](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero CGo](https://img.shields.io/badge/CGo-Zero%20(Pure%20Go)-success)](#)
 
