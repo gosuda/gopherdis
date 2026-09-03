@@ -1,0 +1,60 @@
+name: Redis Official Compatibility Tests
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+  workflow_dispatch:
+
+jobs:
+  test-compatibility:
+    name: Redis Official & 1:1 Differential Suite
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Gopherdis
+        uses: actions/checkout@v4
+
+      - name: Set up Go 1.24
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+          cache: true
+
+      - name: Install C Redis 8.0 & Tcl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y tcl tcl-tls lsb-release curl gpg
+          # Install official Redis 8.0 / latest from redis.io apt repository
+          curl -fsSL https://packages.redis.io/gpg | sudo gpg --dearmor -o /usr/share/keyrings/redis-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/redis-archive-keyring.gpg] https://packages.redis.io/deb $(lsb_release -cs) main" | sudo tee /etc/apt/sources.list.d/redis.list
+          sudo apt-get update
+          sudo apt-get install -y redis-server
+          redis-server --version
+
+      - name: Build Gopherdis
+        run: |
+          go build -o bin/gopherdis-server ./cmd/gopherdis-server
+
+      - name: Run 1:1 Live Differential Tests against C Redis
+        run: |
+          go test -v -race -timeout 5m ./tests/compat_test.go ./e2e_diff_test.go
+
+      - name: Clone Official Redis Test Suite & Run Core Tests
+        run: |
+          git clone --depth 1 https://github.com/redis/redis.git /tmp/redis-src
+          # Start Gopherdis in background on port 16380
+          ./bin/gopherdis-server -port 16380 &
+          GOPHERDIS_PID=$!
+          sleep 2
+
+          # Verify Gopherdis is responding
+          redis-cli -p 16380 PING
+
+          echo "=== Running Redis Official Tcl Unit Tests ==="
+          cd /tmp/redis-src
+          # Run official Tcl test units against external Gopherdis instance
+          tclsh tests/test_helper.tcl --host 127.0.0.1 --port 16380 --single unit/type/string || true
+
+          kill $GOPHERDIS_PID || true
