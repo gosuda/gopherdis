@@ -39,7 +39,7 @@ jobs:
 
       - name: Run 1:1 Live Differential Tests against C Redis
         run: |
-          go test -v -race -timeout 5m ./tests/compat_test.go ./e2e_diff_test.go
+          go test -v -race -timeout 5m ./tests
 
       - name: Clone Official Redis Test Suite & Run Core Tests
         run: |
