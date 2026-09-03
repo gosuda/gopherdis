@@ -11,9 +11,9 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gosuda/nedis/commands"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/parser"
+	"github.com/gosuda/gopherdis/commands"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/parser"
 )
 
 // FsyncPolicy defines the disk synchronization strategy.

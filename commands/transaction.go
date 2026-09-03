@@ -4,7 +4,7 @@ import (
 	"sort"
 	"strings"
 
-	"github.com/gosuda/nedis/db"
+	"github.com/gosuda/gopherdis/db"
 )
 
 // TxState tracks client-level transaction state for MULTI, EXEC, WATCH, DISCARD.
@@ -150,6 +150,8 @@ func execCommand(ctx *Context, argv [][]byte) []byte {
 
 	// Temporarily exit InMulti mode so queued commands are executed, not re-queued
 	ctx.Tx.InMulti = false
+	ctx.InTxExecution = true
+	defer func() { ctx.InTxExecution = false }()
 
 	// 3. Sequentially execute queued commands
 	replies := make([][]byte, len(queued))

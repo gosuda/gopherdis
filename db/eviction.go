@@ -7,7 +7,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/object"
 )
 
 // ErrOOM is returned when memory limit is exceeded under NoEviction policy.

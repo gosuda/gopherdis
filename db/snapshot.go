@@ -3,7 +3,7 @@ package db
 import (
 	"time"
 
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/object"
 )
 
 // DBEntry represents a single key-value snapshot entry along with its expiration timestamp.

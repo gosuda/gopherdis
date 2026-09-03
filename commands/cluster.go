@@ -5,7 +5,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/nedis/cluster"
+	"github.com/gosuda/gopherdis/cluster"
 )
 
 var defaultClusterManager = cluster.NewClusterManager("node_default", "127.0.0.1:6379")

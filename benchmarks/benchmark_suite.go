@@ -114,7 +114,7 @@ func getMemoryUsage(addr string) int64 {
 		return 0
 	}
 	for _, line := range strings.Split(resp, "\r\n") {
-		// used_memory_rss is comparable across engines: Nedis keeps stream data
+		// used_memory_rss is comparable across engines: Gopherdis keeps stream data
 		// in an off-heap arena that used_memory (Go MemStats.Alloc) does not
 		// count, while C Redis's used_memory only covers jemalloc allocations.
 		if strings.HasPrefix(line, "used_memory_rss:") {
@@ -237,11 +237,11 @@ func main() {
 	cleanupFns = append(cleanupFns, killCRedis)
 	defer killCRedis()
 
-	// 2. Start Nedis Standard on 16380
-	log.Println("[Setup] Starting Nedis Standard on :16380...")
-	stdCmd := exec.Command("/home/yjlee/redis-go/nedis/bin/nedis-server", "-port", "16380")
+	// 2. Start Gopherdis Standard on 16380
+	log.Println("[Setup] Starting Gopherdis Standard on :16380...")
+	stdCmd := exec.Command("/home/yjlee/redis-go/nedis/bin/gopherdis-server", "-port", "16380")
 	if err := stdCmd.Start(); err != nil {
-		fatalf("Failed to start Nedis Standard: %v", err)
+		fatalf("Failed to start Gopherdis Standard: %v", err)
 	}
 	killStd := func() {
 		_ = stdCmd.Process.Kill()
@@ -250,11 +250,11 @@ func main() {
 	cleanupFns = append(cleanupFns, killStd)
 	defer killStd()
 
-	// 3. Start Nedis SIMD on 16382
-	log.Println("[Setup] Starting Nedis (SIMD / AVX2) on :16382...")
-	simdCmd := exec.Command("/home/yjlee/redis-go/nedis/bin/nedis-server-simd", "-port", "16382")
+	// 3. Start Gopherdis SIMD on 16382
+	log.Println("[Setup] Starting Gopherdis (SIMD / AVX2) on :16382...")
+	simdCmd := exec.Command("/home/yjlee/redis-go/nedis/bin/gopherdis-server-simd", "-port", "16382")
 	if err := simdCmd.Start(); err != nil {
-		fatalf("Failed to start Nedis SIMD: %v", err)
+		fatalf("Failed to start Gopherdis SIMD: %v", err)
 	}
 	killSimd := func() {
 		_ = simdCmd.Process.Kill()
@@ -328,8 +328,8 @@ func main() {
 	}
 
 	r1C := runBenchmark("1. Concurrency Throughput (SET/GET)", "C Redis 8.0", "127.0.0.1:16379", b1Ops, b1Clients, bench1Work)
-	r1N := runBenchmark("1. Concurrency Throughput (SET/GET)", "Nedis (Go)", "127.0.0.1:16380", b1Ops, b1Clients, bench1Work)
-	r1S := runBenchmark("1. Concurrency Throughput (SET/GET)", "Nedis (Go SIMD)", "127.0.0.1:16382", b1Ops, b1Clients, bench1Work)
+	r1N := runBenchmark("1. Concurrency Throughput (SET/GET)", "Gopherdis (Go)", "127.0.0.1:16380", b1Ops, b1Clients, bench1Work)
+	r1S := runBenchmark("1. Concurrency Throughput (SET/GET)", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b1Ops, b1Clients, bench1Work)
 	r1G := runBenchmark("1. Concurrency Throughput (SET/GET)", "SugarDB (Go)", "127.0.0.1:16381", b1Ops, b1Clients, bench1Work)
 	results = append(results, r1C, r1N, r1S, r1G)
 
@@ -356,8 +356,8 @@ func main() {
 	}
 
 	r2C := runBenchmark("2. Multi-Field Hash Aggregation", "C Redis 8.0", "127.0.0.1:16379", b2Ops, b2Clients, bench2Work)
-	r2N := runBenchmark("2. Multi-Field Hash Aggregation", "Nedis (Go)", "127.0.0.1:16380", b2Ops, b2Clients, bench2Work)
-	r2S := runBenchmark("2. Multi-Field Hash Aggregation", "Nedis (Go SIMD)", "127.0.0.1:16382", b2Ops, b2Clients, bench2Work)
+	r2N := runBenchmark("2. Multi-Field Hash Aggregation", "Gopherdis (Go)", "127.0.0.1:16380", b2Ops, b2Clients, bench2Work)
+	r2S := runBenchmark("2. Multi-Field Hash Aggregation", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b2Ops, b2Clients, bench2Work)
 	r2G := runBenchmark("2. Multi-Field Hash Aggregation", "SugarDB (Go)", "127.0.0.1:16381", b2Ops, b2Clients, bench2Work)
 	results = append(results, r2C, r2N, r2S, r2G)
 
@@ -388,8 +388,8 @@ func main() {
 	}
 
 	r3C := runBenchmark("3. SkipList Leaderboard (ZSet)", "C Redis 8.0", "127.0.0.1:16379", b3Ops, b3Clients, bench3Work)
-	r3N := runBenchmark("3. SkipList Leaderboard (ZSet)", "Nedis (Go)", "127.0.0.1:16380", b3Ops, b3Clients, bench3Work)
-	r3S := runBenchmark("3. SkipList Leaderboard (ZSet)", "Nedis (Go SIMD)", "127.0.0.1:16382", b3Ops, b3Clients, bench3Work)
+	r3N := runBenchmark("3. SkipList Leaderboard (ZSet)", "Gopherdis (Go)", "127.0.0.1:16380", b3Ops, b3Clients, bench3Work)
+	r3S := runBenchmark("3. SkipList Leaderboard (ZSet)", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b3Ops, b3Clients, bench3Work)
 	// NOTE: SugarDB's ZRANGE uses score-range (ZRANGEBYSCORE) semantics, not index-range;
 	// the workload still executes without errors but range queries return empty sets.
 	r3G := runBenchmark("3. SkipList Leaderboard (ZSet)", "SugarDB (Go)", "127.0.0.1:16381", b3Ops, b3Clients, bench3Work)
@@ -417,8 +417,8 @@ func main() {
 	}
 
 	r4C := runBenchmark("4. Stream Queue (XADD/XRANGE)", "C Redis 8.0", "127.0.0.1:16379", b4Ops, b4Clients, bench4Work)
-	r4N := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Nedis (Go)", "127.0.0.1:16380", b4Ops, b4Clients, bench4Work)
-	r4S := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Nedis (Go SIMD)", "127.0.0.1:16382", b4Ops, b4Clients, bench4Work)
+	r4N := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Gopherdis (Go)", "127.0.0.1:16380", b4Ops, b4Clients, bench4Work)
+	r4S := runBenchmark("4. Stream Queue (XADD/XRANGE)", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b4Ops, b4Clients, bench4Work)
 	r4G := BenchResult{Name: "4. Stream Queue (XADD/XRANGE)", Target: "SugarDB (Go)", NA: true} // XADD/XRANGE unsupported
 	results = append(results, r4C, r4N, r4S, r4G)
 
@@ -472,8 +472,8 @@ end`
 	}
 
 	r5C := runBenchmark("5. Redlock Atomic Lua Scripting", "C Redis 8.0", "127.0.0.1:16379", b5Ops, b5Clients, bench5Work(shaC))
-	r5N := runBenchmark("5. Redlock Atomic Lua Scripting", "Nedis (Go)", "127.0.0.1:16380", b5Ops, b5Clients, bench5Work(shaN))
-	r5S := runBenchmark("5. Redlock Atomic Lua Scripting", "Nedis (Go SIMD)", "127.0.0.1:16382", b5Ops, b5Clients, bench5Work(shaS))
+	r5N := runBenchmark("5. Redlock Atomic Lua Scripting", "Gopherdis (Go)", "127.0.0.1:16380", b5Ops, b5Clients, bench5Work(shaN))
+	r5S := runBenchmark("5. Redlock Atomic Lua Scripting", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b5Ops, b5Clients, bench5Work(shaS))
 	r5G := BenchResult{Name: "5. Redlock Atomic Lua Scripting", Target: "SugarDB (Go)", NA: true} // EVAL/SCRIPT unsupported
 	results = append(results, r5C, r5N, r5S, r5G)
 
@@ -504,8 +504,8 @@ end`
 	}
 
 	r6C := runBenchmark("6. Bitmap & HyperLogLog", "C Redis 8.0", "127.0.0.1:16379", b6Ops, b6Clients, bench6Work)
-	r6N := runBenchmark("6. Bitmap & HyperLogLog", "Nedis (Go)", "127.0.0.1:16380", b6Ops, b6Clients, bench6Work)
-	r6S := runBenchmark("6. Bitmap & HyperLogLog", "Nedis (Go SIMD)", "127.0.0.1:16382", b6Ops, b6Clients, bench6Work)
+	r6N := runBenchmark("6. Bitmap & HyperLogLog", "Gopherdis (Go)", "127.0.0.1:16380", b6Ops, b6Clients, bench6Work)
+	r6S := runBenchmark("6. Bitmap & HyperLogLog", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b6Ops, b6Clients, bench6Work)
 	r6G := BenchResult{Name: "6. Bitmap & HyperLogLog", Target: "SugarDB (Go)", NA: true} // SETBIT/BITCOUNT/PFADD unsupported
 	results = append(results, r6C, r6N, r6S, r6G)
 
@@ -537,8 +537,8 @@ end`
 	}
 
 	r7C := runBenchmark("7. Real-World Cache (2M x 1KB)", "C Redis 8.0", "127.0.0.1:16379", b7Ops, b7Clients, bench7Work)
-	r7N := runBenchmark("7. Real-World Cache (2M x 1KB)", "Nedis (Go)", "127.0.0.1:16380", b7Ops, b7Clients, bench7Work)
-	r7S := runBenchmark("7. Real-World Cache (2M x 1KB)", "Nedis (Go SIMD)", "127.0.0.1:16382", b7Ops, b7Clients, bench7Work)
+	r7N := runBenchmark("7. Real-World Cache (2M x 1KB)", "Gopherdis (Go)", "127.0.0.1:16380", b7Ops, b7Clients, bench7Work)
+	r7S := runBenchmark("7. Real-World Cache (2M x 1KB)", "Gopherdis (Go SIMD)", "127.0.0.1:16382", b7Ops, b7Clients, bench7Work)
 	// NOTE: SugarDB crashes (container exit 2, goroutine dump) under this
 	// large multi-hundred-MB workload, so it cannot be measured.
 	r7G := BenchResult{Name: "7. Real-World Cache (2M x 1KB)", Target: "SugarDB (Go)", NA: true}
@@ -619,8 +619,8 @@ func writeMarkdownReport(results []BenchResult) {
 	defer mdFile.Close()
 
 	var sb strings.Builder
-	sb.WriteString("# 📊 C Redis 8.0 vs Nedis (Pure Go) vs SugarDB (Pure Go) 7-Dimensional Benchmark Analysis Report\n\n")
-	sb.WriteString("This document details the multi-dimensional benchmark methodology and performance comparison results between official C Redis 8.0, Nedis (Pure Go Redis-compatible store), and SugarDB (Pure Go in-memory Redis alternative, running in Docker with host networking), executed under an identical hardware and local loopback TCP network environment.\n\n")
+	sb.WriteString("# 📊 C Redis 8.0 vs Gopherdis (Pure Go) vs SugarDB (Pure Go) 7-Dimensional Benchmark Analysis Report\n\n")
+	sb.WriteString("This document details the multi-dimensional benchmark methodology and performance comparison results between official C Redis 8.0, Gopherdis (Pure Go Redis-compatible store), and SugarDB (Pure Go in-memory Redis alternative, running in Docker with host networking), executed under an identical hardware and local loopback TCP network environment.\n\n")
 
 	sb.WriteString("## 1. ⚙️ System Environment & Test Setup\n\n")
 	sb.WriteString("| Parameter | Specification |\n")
@@ -635,7 +635,7 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("| **Benchmark Protocol** | RESP2 / RESP3 direct TCP socket streaming with pre-connected connection pooling |\n\n")
 
 	sb.WriteString("## 2. 📈 Performance Visualization\n\n")
-	sb.WriteString("![C Redis vs Nedis Benchmark Chart](benchmark_chart.svg)\n\n")
+	sb.WriteString("![C Redis vs Gopherdis Benchmark Chart](benchmark_chart.svg)\n\n")
 
 	sb.WriteString("## 3. 📋 Benchmark Summary Table\n\n")
 	sb.WriteString("| Workload Scenario | Target Engine | Total Ops | Throughput (QPS) | P50 Latency (ms) | P95 Latency (ms) | P99 Latency (ms) | P99.9 Latency (ms) | Memory Delta |\n")
@@ -647,7 +647,7 @@ func writeMarkdownReport(results []BenchResult) {
 			continue
 		}
 		speedRatio := ""
-		if strings.Contains(r.Target, "Nedis") {
+		if strings.Contains(r.Target, "Gopherdis") {
 			speedRatio = " ⚡"
 		}
 		// Tail-latency delta vs the C Redis row of the same workload.
@@ -672,18 +672,18 @@ func writeMarkdownReport(results []BenchResult) {
 
 	// find locates a measured (non-N/A) result row by benchmark name prefix and target.
 	find := func(namePrefix, target string) *BenchResult { return findRow(results, namePrefix, target) }
-	ana := func(b string) (c, n *BenchResult) { return find(b, "C Redis 8.0"), find(b, "Nedis (Go)") }
+	ana := func(b string) (c, n *BenchResult) { return find(b, "C Redis 8.0"), find(b, "Gopherdis (Go)") }
 
 	sb.WriteString("### ① High-Concurrency SET/GET Throughput\n")
 	sb.WriteString("- **Scenario**: 50 concurrent client connections, 50,000 operations with 128-byte payloads.\n")
 	if c, n := ana("1."); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("- **Analysis**: Nedis utilizes a **64-shard contention-free architecture**, socket-level `TCP_NODELAY`, and Beaver Arena memory pooling across 12 CPU hardware threads. It achieves **%.0fk QPS (%.2fx higher than C Redis)** with comparable tail latency (**P99: %.3fms vs C Redis %.3fms**). SugarDB reaches %.0fk QPS (Nedis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P99Latency, c.P99Latency, find("1.", "SugarDB (Go)").QPS/1000, n.QPS/find("1.", "SugarDB (Go)").QPS))
+		sb.WriteString(fmt.Sprintf("- **Analysis**: Gopherdis utilizes a **64-shard contention-free architecture**, socket-level `TCP_NODELAY`, and Beaver Arena memory pooling across 12 CPU hardware threads. It achieves **%.0fk QPS (%.2fx higher than C Redis)** with comparable tail latency (**P99: %.3fms vs C Redis %.3fms**). SugarDB reaches %.0fk QPS (Gopherdis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P99Latency, c.P99Latency, find("1.", "SugarDB (Go)").QPS/1000, n.QPS/find("1.", "SugarDB (Go)").QPS))
 	}
 
 	sb.WriteString("### ② Multi-Field Hash Aggregation\n")
 	sb.WriteString("- **Scenario**: 20 concurrent clients, 5-field HSET and HMGET operations across 20,000 requests.\n")
 	if c, n := ana("2."); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("- **Analysis**: With **Hybrid Flat-Dict (contiguous array pairs for <= 64 entries + automatic hash map promotion)** and single-pass RESP buffer serialization, Nedis delivers **%.0fk QPS (%.2fx C Redis)**, **P50 of %.3fms**, and **P99 of %.3fms (vs C Redis %.3fms)**. SugarDB reaches %.0fk QPS (Nedis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P99Latency, c.P99Latency, find("2.", "SugarDB (Go)").QPS/1000, n.QPS/find("2.", "SugarDB (Go)").QPS))
+		sb.WriteString(fmt.Sprintf("- **Analysis**: With **Hybrid Flat-Dict (contiguous array pairs for <= 64 entries + automatic hash map promotion)** and single-pass RESP buffer serialization, Gopherdis delivers **%.0fk QPS (%.2fx C Redis)**, **P50 of %.3fms**, and **P99 of %.3fms (vs C Redis %.3fms)**. SugarDB reaches %.0fk QPS (Gopherdis is %.2fx faster).\n\n", n.QPS/1000, n.QPS/c.QPS, n.P50Latency, n.P99Latency, c.P99Latency, find("2.", "SugarDB (Go)").QPS/1000, n.QPS/find("2.", "SugarDB (Go)").QPS))
 	}
 
 	sb.WriteString("### ③ Ranked SkipList Leaderboard (ZSet)\n")
@@ -713,7 +713,7 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("### ⑦ Real-World Cache at Scale (2M keys × 1KB)\n")
 	sb.WriteString("- **Scenario**: 50 concurrent clients loading 1,600,000 cache entries with 1KB values (~1.6GB of payload), 80% SET / 20% GET. This approximates a production cache workload where the dataset itself dominates memory usage.\n")
 	if c, n := ana("7."); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, memory reaches parity: Nedis grows **%s** vs C Redis **%s** (%+.0f%%), unlike the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 2M×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
+		sb.WriteString(fmt.Sprintf("- **Analysis**: With real data dominating, memory reaches parity: Gopherdis grows **%s** vs C Redis **%s** (%+.0f%%), unlike the small overhead-dominated workloads above. Throughput: **%.0fk QPS (%.2fx C Redis)**, P99.9 **%.3fms vs %.3fms**. (SugarDB crashes under this 2M×1KB load, so it is N/A.)\n\n", formatBytes(n.MemoryUsed), formatBytes(c.MemoryUsed), float64(n.MemoryUsed-c.MemoryUsed)/float64(c.MemoryUsed)*100, n.QPS/1000, n.QPS/c.QPS, n.P999Latency, c.P999Latency))
 	}
 
 	// §5: Go implementation comparison, derived from the suite-measured results
@@ -724,30 +724,30 @@ func writeMarkdownReport(results []BenchResult) {
 	sb.WriteString("| Workload | Target | QPS (ops/s) | P50 (ms) | P95 (ms) | P99 (ms) | P99.9 (ms) |\n")
 	sb.WriteString("|---|---|:---:|:---:|:---:|:---:|:---:|\n")
 	for _, b := range []string{"1.", "2.", "3."} {
-		for _, t := range []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"} {
+		for _, t := range []string{"C Redis 8.0", "Gopherdis (Go)", "Gopherdis (Go SIMD)", "SugarDB (Go)"} {
 			if r := find(b, t); r != nil {
 				sb.WriteString(fmt.Sprintf("| %s | **%s** | **%.0f** | %.3f | %.3f | %.3f | %.3f |\n",
 					r.Name, r.Target, r.QPS, r.P50Latency, r.P95Latency, r.P99Latency, r.P999Latency))
 			}
 		}
 	}
-	if n, g := find("1.", "Nedis (Go)"), find("1.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
-		sb.WriteString(fmt.Sprintf("\nThroughput (SET/GET, workload 1): Nedis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
+	if n, g := find("1.", "Gopherdis (Go)"), find("1.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
+		sb.WriteString(fmt.Sprintf("\nThroughput (SET/GET, workload 1): Gopherdis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
 	}
-	if n, g := find("2.", "Nedis (Go)"), find("2.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
-		sb.WriteString(fmt.Sprintf(" Hash workload: Nedis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
+	if n, g := find("2.", "Gopherdis (Go)"), find("2.", "SugarDB (Go)"); n != nil && g != nil && g.QPS > 0 {
+		sb.WriteString(fmt.Sprintf(" Hash workload: Gopherdis ≈ **%.1fx SugarDB**.", n.QPS/g.QPS))
 	}
-	sb.WriteString(" On workload 3 (ZSet), SugarDB's ZRANGE implements score-range rather than index-range semantics and returns empty sets under this workload, so its raw QPS is not comparable; Nedis and C Redis perform real index-range scans. SugarDB cannot run workloads 4–6 at all.\n")
-	sb.WriteString("\n**Conclusion**: Against SugarDB, the most actively maintained pure-Go in-memory Redis alternative, Nedis delivers substantially higher throughput on the comparable workloads under identical suite conditions, and additionally supports Streams, Lua scripting, Bitmaps, and HyperLogLog, which SugarDB lacks entirely.\n")
+	sb.WriteString(" On workload 3 (ZSet), SugarDB's ZRANGE implements score-range rather than index-range semantics and returns empty sets under this workload, so its raw QPS is not comparable; Gopherdis and C Redis perform real index-range scans. SugarDB cannot run workloads 4–6 at all.\n")
+	sb.WriteString("\n**Conclusion**: Against SugarDB, the most actively maintained pure-Go in-memory Redis alternative, Gopherdis delivers substantially higher throughput on the comparable workloads under identical suite conditions, and additionally supports Streams, Lua scripting, Bitmaps, and HyperLogLog, which SugarDB lacks entirely.\n")
 
 	// §6: Memory characteristics. The at-scale comparison (workload 7, where the
 	// dataset dominates) comes first; the small-workload table below it isolates
 	// each engine's fixed baseline overhead.
 	sb.WriteString("\n---\n\n")
 	sb.WriteString("## 6. 🧠 Memory Characteristics\n\n")
-	sb.WriteString("Memory Delta is the growth of each server's `used_memory_rss` (from `INFO memory`) measured before and after each workload. RSS is used because it is comparable across engines: C Redis's `used_memory` covers only jemalloc allocations, and Nedis's `used_memory` is Go `MemStats.Alloc`, which lags GC sweep timing — RSS reflects what the OS actually backs with physical pages. Both engines report real RSS: C Redis reads `/proc/self/statm`, and Nedis does the same after a full GC plus `debug.FreeOSMemory()` so GC-cycle headroom is not counted. SugarDB does not support `INFO memory`, so its deltas are reported as 0 B and omitted from the totals.\n\n")
+	sb.WriteString("Memory Delta is the growth of each server's `used_memory_rss` (from `INFO memory`) measured before and after each workload. RSS is used because it is comparable across engines: C Redis's `used_memory` covers only jemalloc allocations, and Gopherdis's `used_memory` is Go `MemStats.Alloc`, which lags GC sweep timing — RSS reflects what the OS actually backs with physical pages. Both engines report real RSS: C Redis reads `/proc/self/statm`, and Gopherdis does the same after a full GC plus `debug.FreeOSMemory()` so GC-cycle headroom is not counted. SugarDB does not support `INFO memory`, so its deltas are reported as 0 B and omitted from the totals.\n\n")
 
-	targets := []string{"C Redis 8.0", "Nedis (Go)", "Nedis (Go SIMD)", "SugarDB (Go)"}
+	targets := []string{"C Redis 8.0", "Gopherdis (Go)", "Gopherdis (Go SIMD)", "SugarDB (Go)"}
 
 	// At-scale comparison first: with ~1.6GB of real payload, the data itself
 	// dominates and per-engine overhead becomes a minor addend.
@@ -770,9 +770,9 @@ func writeMarkdownReport(results []BenchResult) {
 		sb.WriteString(fmt.Sprintf("| **%s** | %s | %s |\n", r.Target, formatBytes(r.MemoryUsed), ratio))
 	}
 	if c7 != nil {
-		if n := find("7.", "Nedis (Go)"); n != nil && c7.MemoryUsed > 0 {
+		if n := find("7.", "Gopherdis (Go)"); n != nil && c7.MemoryUsed > 0 {
 			const b7Keys = 1600000 // 80% of 2M ops are SETs of distinct keys
-			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~1.6GB of 1KB values) dominates `used_memory`, Nedis and C Redis reach memory parity (**%s** vs **%s**, %+.0f%%): %.1fKB vs %.1fKB stored per 1KB key/value pair. Go 1.24's Swiss-table maps and slim `Robj` headers keep per-key cost low, and Nedis's `INFO memory` runs a full GC plus `debug.FreeOSMemory()` before reporting so GC headroom is not counted. The fixed baseline overhead in the table below is constant with respect to dataset size and becomes proportionally negligible as data grows.\n",
+			sb.WriteString(fmt.Sprintf("\nOnce the dataset itself (~1.6GB of 1KB values) dominates `used_memory`, Gopherdis and C Redis reach memory parity (**%s** vs **%s**, %+.0f%%): %.1fKB vs %.1fKB stored per 1KB key/value pair. Go 1.24's Swiss-table maps and slim `Robj` headers keep per-key cost low, and Gopherdis's `INFO memory` runs a full GC plus `debug.FreeOSMemory()` before reporting so GC headroom is not counted. The fixed baseline overhead in the table below is constant with respect to dataset size and becomes proportionally negligible as data grows.\n",
 				formatBytes(n.MemoryUsed), formatBytes(c7.MemoryUsed),
 				float64(n.MemoryUsed-c7.MemoryUsed)/float64(c7.MemoryUsed)*100,
 				float64(n.MemoryUsed)/b7Keys/1024, float64(c7.MemoryUsed)/b7Keys/1024))
@@ -782,7 +782,7 @@ func writeMarkdownReport(results []BenchResult) {
 	// Baseline overhead on the small workloads.
 	sb.WriteString("\n### Baseline overhead (workloads 1–6, overhead-dominated)\n\n")
 	sb.WriteString("On small workloads the fixed per-engine overhead is the dominant term. This isolates the constant cost each engine pays regardless of dataset size.\n\n")
-	sb.WriteString("| Workload | C Redis 8.0 | Nedis (Standard) | Nedis (SIMD/AVX2) | SugarDB (Go) |\n")
+	sb.WriteString("| Workload | C Redis 8.0 | Gopherdis (Standard) | Gopherdis (SIMD/AVX2) | SugarDB (Go) |\n")
 	sb.WriteString("|---|:---:|:---:|:---:|:---:|\n")
 	totals := map[string]int64{}
 	for _, b := range []string{"1.", "2.", "3.", "4.", "5.", "6."} {
@@ -803,8 +803,8 @@ func writeMarkdownReport(results []BenchResult) {
 		sb.WriteString(fmt.Sprintf(" **%s** |", formatBytes(totals[t])))
 	}
 	sb.WriteString("\n\n")
-	if c, n := find("1.", "C Redis 8.0"), find("1.", "Nedis (Go)"); c != nil && n != nil {
-		sb.WriteString(fmt.Sprintf("**Analysis**: Nedis trades a higher fixed baseline (**%s** vs C Redis **%s** across workloads 1–6) for its throughput and tail-latency gains. The delta is deliberate pre-allocation, not per-request leakage: the 64-shard architecture pre-sizes per-shard buffers, and the Beaver Arena pool retains 8KB stream chunk slabs for reuse instead of returning them to the OS. C Redis, backed by jemalloc, grows incrementally and reports the smallest deltas, while SugarDB's memory usage is unmeasurable in this suite because it does not implement `INFO memory`.\n", formatBytes(totals["Nedis (Go)"]), formatBytes(totals["C Redis 8.0"])))
+	if c, n := find("1.", "C Redis 8.0"), find("1.", "Gopherdis (Go)"); c != nil && n != nil {
+		sb.WriteString(fmt.Sprintf("**Analysis**: Gopherdis trades a higher fixed baseline (**%s** vs C Redis **%s** across workloads 1–6) for its throughput and tail-latency gains. The delta is deliberate pre-allocation, not per-request leakage: the 64-shard architecture pre-sizes per-shard buffers, and the Beaver Arena pool retains 8KB stream chunk slabs for reuse instead of returning them to the OS. C Redis, backed by jemalloc, grows incrementally and reports the smallest deltas, while SugarDB's memory usage is unmeasurable in this suite because it does not implement `INFO memory`.\n", formatBytes(totals["Gopherdis (Go)"]), formatBytes(totals["C Redis 8.0"])))
 	}
 
 	_, _ = mdFile.WriteString(sb.String())

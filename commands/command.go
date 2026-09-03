@@ -7,11 +7,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosuda/nedis/acl"
-	"github.com/gosuda/nedis/cluster"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/pubsub"
-	"github.com/gosuda/nedis/scripting"
+	"github.com/gosuda/gopherdis/acl"
+	"github.com/gosuda/gopherdis/cluster"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/pubsub"
+	"github.com/gosuda/gopherdis/scripting"
 )
 
 // CommandFlags specifies behavior attributes of commands.
@@ -68,6 +68,7 @@ type Context struct {
 	User        *acl.User
 	Scripting   *scripting.Engine
 	Cluster     *cluster.ClusterManager
+	InTxExecution bool
 }
 
 // CommandHandler is the signature for command execution functions.
@@ -190,6 +191,15 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 			}
 			ctx.Tx.QueuedCmds = append(ctx.Tx.QueuedCmds, clonedArgv)
 			return Queued()
+		}
+	}
+
+	// Acquire operation lock on DB for transaction isolation (unless inside an active EXEC/EVAL transaction)
+	if ctx != nil && ctx.DB != nil && !ctx.InTxExecution {
+		cmdLower := strings.ToLower(cmd.Name)
+		if cmdLower != "exec" && cmdLower != "eval" && cmdLower != "evalsha" {
+			ctx.DB.BeginOp()
+			defer ctx.DB.EndOp()
 		}
 	}
 

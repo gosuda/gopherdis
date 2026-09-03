@@ -9,8 +9,8 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/rdb"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/rdb"
 )
 
 type Role int

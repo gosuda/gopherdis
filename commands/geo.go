@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/nedis/datastruct/geo"
+	"github.com/gosuda/gopherdis/datastruct/geo"
 )
 
 func init() {

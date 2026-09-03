@@ -1,57 +1,66 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1050 500" width="1050" height="500">
-<defs>
-<linearGradient id="bgGrad" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#0f172a"/><stop offset="100%" stop-color="#1e293b"/></linearGradient>
-<linearGradient id="barNedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#0284c7"/><stop offset="100%" stop-color="#38bdf8"/></linearGradient>
-<linearGradient id="barRedis" x1="0" y1="0" x2="1" y2="0"><stop offset="0%" stop-color="#ef4444"/><stop offset="100%" stop-color="#dc2626"/></linearGradient>
-<filter id="shadow" x="-5%" y="-5%" width="110%" height="110%"><feDropShadow dx="0" dy="2" stdDeviation="3" flood-opacity="0.3"/></filter>
-</defs>
-<rect width="1050" height="500" rx="12" fill="url(#bgGrad)"/>
-<rect width="1050" height="500" rx="12" fill="none" stroke="#334155" stroke-width="1.5"/>
-<text x="30" y="42" font-family="system-ui, -apple-system, sans-serif" font-size="20" font-weight="700" fill="#f8fafc">Redis 8.0 (C) vs Nedis Standard 6-Dimensional Throughput Benchmark</text>
-<text x="30" y="62" font-family="system-ui, -apple-system, sans-serif" font-size="12" fill="#94a3b8">Standard Binary (GOAMD64=v1 Baseline) • Local Loopback TCP • Unit: QPS (Higher is better)</text>
-<rect x="800" y="28" width="14" height="14" rx="3" fill="url(#barNedis)"/>
-<text x="820" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">Nedis Standard</text>
-<rect x="960" y="28" width="14" height="14" rx="3" fill="url(#barRedis)"/>
-<text x="980" y="40" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#f8fafc">C Redis 8.0</text>
-<line x1="220.0" y1="80" x2="220.0" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
-<text x="220.0" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">0k</text>
-<line x1="372.1302460284146" y1="80" x2="372.1302460284146" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
-<text x="372.1302460284146" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">100k</text>
-<line x1="524.2604920568292" y1="80" x2="524.2604920568292" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
-<text x="524.2604920568292" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">200k</text>
-<line x1="676.3907380852436" y1="80" x2="676.3907380852436" y2="440" stroke="#334155" stroke-dasharray="3,3" stroke-width="1"/>
-<text x="676.3907380852436" y="460" font-family="monospace" font-size="11" fill="#64748b" text-anchor="middle">300k</text>
-<text x="205" y="106" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">1. Concurrency (SET/GET)</text>
-<rect x="220" y="86" width="469.6" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="697.5652173913043" y="100" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">308,660 (2.46x)</text>
-<rect x="220" y="108" width="191.1" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="419.0710251043078" y="122" font-family="monospace" font-size="11" fill="#f87171">125,597</text>
-<text x="205" y="166" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">2. Multi-Field Hash</text>
-<rect x="220" y="146" width="264.2" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="492.23654562921354" y="160" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">173,691 (1.68x)</text>
-<rect x="220" y="168" width="157.6" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="385.5932431632949" y="182" font-family="monospace" font-size="11" fill="#f87171">103,591</text>
-<text x="205" y="226" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">3. Ranked SkipList</text>
-<rect x="220" y="206" width="285.3" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="513.3491811730369" y="220" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">187,569 (1.57x)</text>
-<rect x="220" y="228" width="182.2" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="410.22008739037466" y="242" font-family="monospace" font-size="11" fill="#f87171">119,779</text>
-<text x="205" y="286" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">4. Stream Event Queue</text>
-<rect x="220" y="266" width="155.9" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="383.8924270126972" y="280" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">102,473 (1.23x)</text>
-<rect x="220" y="288" width="126.3" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="354.2711468085047" y="302" font-family="monospace" font-size="11" fill="#f87171">83,002</text>
-<text x="205" y="346" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">5. Redlock Atomic Lua</text>
-<rect x="220" y="326" width="227.1" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="455.07569043185265" y="340" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">149,264 (1.41x)</text>
-<rect x="220" y="348" width="160.5" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="388.48828174521566" y="362" font-family="monospace" font-size="11" fill="#f87171">105,494</text>
-<text x="205" y="406" font-family="system-ui, -apple-system, sans-serif" font-size="12" font-weight="600" fill="#cbd5e1" text-anchor="end">6. Bitmap &amp; HyperLogLog</text>
-<rect x="220" y="386" width="268.7" height="18" rx="4" fill="url(#barNedis)" filter="url(#shadow)"/>
-<text x="496.66657839356094" y="400" font-family="monospace" font-size="11" font-weight="700" fill="#38bdf8">176,603 (1.39x)</text>
-<rect x="220" y="408" width="193.3" height="18" rx="4" fill="url(#barRedis)" filter="url(#shadow)"/>
-<text x="421.27843497418013" y="422" font-family="monospace" font-size="11" fill="#f87171">127,048</text>
-<line x1="30" y1="470" x2="1020" y2="470" stroke="#334155" stroke-width="1"/>
-<text x="30" y="488" font-family="monospace" font-size="11" fill="#64748b">Benchmark Environment: AMD Ryzen 5 5600X (12T) | 64GB DDR4 | Linux 6.12 | Go 1.24.4</text>
-<text x="1020" y="488" font-family="monospace" font-size="11" fill="#38bdf8" text-anchor="end">gosuda/nedis v1.0.0</text>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1100 520" width="1100" height="520">
+<rect width="100%" height="100%" fill="#0f172a" />
+<text x="550" y="35" font-family="sans-serif" font-size="18" font-weight="bold" fill="#f8fafc" text-anchor="middle">Redis 8.0 (C) vs Gopherdis Standard (Pure Go) vs SugarDB</text>
+<text x="550" y="55" font-family="sans-serif" font-size="12" fill="#94a3b8" text-anchor="middle">Throughput (Ops/sec) — Higher is better (AMD Ryzen 5 5600X, 127.0.0.1 Loopback TCP)</text>
+<g transform="translate(700, 20)">
+<rect x="0" y="0" width="12" height="12" fill="#ef4444" rx="2"/>
+<text x="18" y="10" font-family="sans-serif" font-size="11" fill="#cbd5e1">C Redis 8.0</text>
+<rect x="110" y="0" width="12" height="12" fill="#00ADD8" rx="2"/>
+<text x="128" y="10" font-family="sans-serif" font-size="11" fill="#cbd5e1">Gopherdis Standard</text>
+<rect x="260" y="0" width="12" height="12" fill="#eab308" rx="2"/>
+<text x="278" y="10" font-family="sans-serif" font-size="11" fill="#cbd5e1">SugarDB</text>
+</g>
+<text x="165" y="104" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Concurrent SET/GET</text>
+<line x1="180" y1="128" x2="1030" y2="128" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="80" width="254.9" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="440.9" y="91" font-family="monospace" font-size="10" fill="#fca5a5">119,974 ops/s</text>
+<rect x="180" y="96" width="634.7" height="14" fill="#00ADD8" rx="2"/>
+<text x="820.7" y="107" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">298,703 ops/s (2.49x)</text>
+<rect x="180" y="112" width="188.7" height="14" fill="#eab308" rx="2" opacity="0.7"/>
+<text x="374.7" y="123" font-family="monospace" font-size="10" fill="#fde047">88,781 ops/s</text>
+<text x="165" y="159" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Multi-Field Hash</text>
+<line x1="180" y1="183" x2="1030" y2="183" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="135" width="237.3" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="423.3" y="146" font-family="monospace" font-size="10" fill="#fca5a5">111,687 ops/s</text>
+<rect x="180" y="151" width="315.2" height="14" fill="#00ADD8" rx="2"/>
+<text x="501.2" y="162" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">148,308 ops/s (1.33x)</text>
+<rect x="180" y="167" width="194.3" height="14" fill="#eab308" rx="2" opacity="0.7"/>
+<text x="380.3" y="178" font-family="monospace" font-size="10" fill="#fde047">91,437 ops/s</text>
+<text x="165" y="214" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">SkipList Leaderboard</text>
+<line x1="180" y1="238" x2="1030" y2="238" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="190" width="234.9" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="420.9" y="201" font-family="monospace" font-size="10" fill="#fca5a5">110,559 ops/s</text>
+<rect x="180" y="206" width="298.2" height="14" fill="#00ADD8" rx="2"/>
+<text x="484.2" y="217" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">140,324 ops/s (1.27x)</text>
+<rect x="180" y="222" width="840.6" height="14" fill="#eab308" rx="2" opacity="0.7"/>
+<text x="1026.6" y="233" font-family="monospace" font-size="10" fill="#fde047">395,566 ops/s</text>
+<text x="165" y="269" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Stream Event Queue</text>
+<line x1="180" y1="293" x2="1030" y2="293" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="245" width="169.2" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="355.2" y="256" font-family="monospace" font-size="10" fill="#fca5a5">79,615 ops/s</text>
+<rect x="180" y="261" width="205.4" height="14" fill="#00ADD8" rx="2"/>
+<text x="391.4" y="272" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">96,679 ops/s (1.21x)</text>
+<text x="186" y="288" font-family="monospace" font-size="10" fill="#64748b">[ N/A - Unsupported ]</text>
+<text x="165" y="324" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Redlock Lua Script</text>
+<line x1="180" y1="348" x2="1030" y2="348" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="300" width="224.9" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="410.9" y="311" font-family="monospace" font-size="10" fill="#fca5a5">105,839 ops/s</text>
+<rect x="180" y="316" width="8.9" height="14" fill="#00ADD8" rx="2"/>
+<text x="194.9" y="327" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">4,200 ops/s (0.04x)</text>
+<text x="186" y="343" font-family="monospace" font-size="10" fill="#64748b">[ N/A - Unsupported ]</text>
+<text x="165" y="379" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Bitmap & HyperLogLog</text>
+<line x1="180" y1="403" x2="1030" y2="403" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="355" width="256.6" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="442.6" y="366" font-family="monospace" font-size="10" fill="#fca5a5">120,748 ops/s</text>
+<rect x="180" y="371" width="427.6" height="14" fill="#00ADD8" rx="2"/>
+<text x="613.6" y="382" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">201,204 ops/s (1.67x)</text>
+<text x="186" y="398" font-family="monospace" font-size="10" fill="#64748b">[ N/A - Unsupported ]</text>
+<text x="165" y="434" font-family="sans-serif" font-size="12" font-weight="600" fill="#e2e8f0" text-anchor="end">Real-World Cache (2M)</text>
+<line x1="180" y1="458" x2="1030" y2="458" stroke="#1e293b" stroke-width="1"/>
+<rect x="180" y="410" width="236.8" height="14" fill="#ef4444" rx="2" opacity="0.9"/>
+<text x="422.8" y="421" font-family="monospace" font-size="10" fill="#fca5a5">111,420 ops/s</text>
+<rect x="180" y="426" width="404.4" height="14" fill="#00ADD8" rx="2"/>
+<text x="590.4" y="437" font-family="monospace" font-size="10" font-weight="bold" fill="#38bdf8">190,291 ops/s (1.71x)</text>
+<text x="186" y="453" font-family="monospace" font-size="10" fill="#64748b">[ N/A - Unsupported ]</text>
+<text x="1020" y="505" font-family="monospace" font-size="11" fill="#38bdf8" text-anchor="end">gosuda/gopherdis v1.0.0</text>
 </svg>

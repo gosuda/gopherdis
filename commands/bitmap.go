@@ -5,8 +5,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/nedis/datastruct/bitmap"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/bitmap"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {

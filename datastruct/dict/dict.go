@@ -1,5 +1,7 @@
 package dict
 
+import "sync"
+
 // Pair represents a contiguous field-value entry.
 type Pair struct {
 	Key   string
@@ -10,6 +12,7 @@ type Pair struct {
 // It stores small hashes in a flat contiguous []Pair for CPU cache locality and zero bucket overhead,
 // and automatically promotes to map[string][]byte when field count exceeds 64.
 type Dict struct {
+	mu    sync.RWMutex
 	pairs []Pair
 	table map[string][]byte
 }
@@ -23,6 +26,9 @@ func New() *Dict {
 
 // Set inserts or updates a key-value pair. Returns true if key was newly created.
 func (d *Dict) Set(key string, val []byte) (isNew bool) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.table != nil {
 		_, exists := d.table[key]
 		d.table[key] = val
@@ -53,6 +59,9 @@ func (d *Dict) Set(key string, val []byte) (isNew bool) {
 
 // Get retrieves value by key.
 func (d *Dict) Get(key string) ([]byte, bool) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	if d.table != nil {
 		v, ok := d.table[key]
 		return v, ok
@@ -67,6 +76,9 @@ func (d *Dict) Get(key string) ([]byte, bool) {
 
 // Del removes a key. Returns true if key existed.
 func (d *Dict) Del(key string) bool {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
 	if d.table != nil {
 		if _, ok := d.table[key]; ok {
 			delete(d.table, key)
@@ -85,6 +97,9 @@ func (d *Dict) Del(key string) bool {
 
 // Len returns the count of entries.
 func (d *Dict) Len() int {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	if d.table != nil {
 		return len(d.table)
 	}
@@ -93,6 +108,9 @@ func (d *Dict) Len() int {
 
 // ForEach iterates all entries.
 func (d *Dict) ForEach(fn func(key string, val []byte)) {
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
 	if d.table != nil {
 		for k, v := range d.table {
 			fn(k, v)
@@ -106,18 +124,40 @@ func (d *Dict) ForEach(fn func(key string, val []byte)) {
 
 // Keys returns all field names.
 func (d *Dict) Keys() []string {
-	res := make([]string, 0, d.Len())
-	d.ForEach(func(k string, _ []byte) {
-		res = append(res, k)
-	})
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var res []string
+	if d.table != nil {
+		res = make([]string, 0, len(d.table))
+		for k := range d.table {
+			res = append(res, k)
+		}
+	} else {
+		res = make([]string, 0, len(d.pairs))
+		for _, p := range d.pairs {
+			res = append(res, p.Key)
+		}
+	}
 	return res
 }
 
 // Values returns all values.
 func (d *Dict) Values() [][]byte {
-	res := make([][]byte, 0, d.Len())
-	d.ForEach(func(_ string, v []byte) {
-		res = append(res, v)
-	})
+	d.mu.RLock()
+	defer d.mu.RUnlock()
+
+	var res [][]byte
+	if d.table != nil {
+		res = make([][]byte, 0, len(d.table))
+		for _, v := range d.table {
+			res = append(res, v)
+		}
+	} else {
+		res = make([][]byte, 0, len(d.pairs))
+		for _, p := range d.pairs {
+			res = append(res, p.Value)
+		}
+	}
 	return res
 }

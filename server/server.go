@@ -12,14 +12,14 @@ import (
 	"time"
 
 	"github.com/gosuda/beaver/pure"
-	"github.com/gosuda/nedis/acl"
-	"github.com/gosuda/nedis/cluster"
-	"github.com/gosuda/nedis/commands"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/parser"
-	"github.com/gosuda/nedis/pubsub"
-	"github.com/gosuda/nedis/replication"
-	"github.com/gosuda/nedis/scripting"
+	"github.com/gosuda/gopherdis/acl"
+	"github.com/gosuda/gopherdis/cluster"
+	"github.com/gosuda/gopherdis/commands"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/parser"
+	"github.com/gosuda/gopherdis/pubsub"
+	"github.com/gosuda/gopherdis/replication"
+	"github.com/gosuda/gopherdis/scripting"
 )
 
 

@@ -6,10 +6,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/datastruct/quicklist"
-	"github.com/gosuda/nedis/datastruct/skiplist"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func TestRDB_RoundtripAllDataTypes(t *testing.T) {

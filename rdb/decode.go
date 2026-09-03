@@ -8,11 +8,11 @@ import (
 	"strconv"
 	"time"
 
-	"github.com/gosuda/nedis/datastruct/quicklist"
-	"github.com/gosuda/nedis/datastruct/skiplist"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
-	"github.com/gosuda/nedis/rdb/lzf"
+	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
+	"github.com/gosuda/gopherdis/rdb/lzf"
 )
 
 var (

@@ -1,7 +1,8 @@
 package commands
 
 import (
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/set"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {
@@ -43,10 +44,10 @@ func init() {
 	})
 }
 
-func getOrCreateSet(ctx *Context, key string) (map[string]struct{}, bool, []byte) {
+func getOrCreateSet(ctx *Context, key string) (*set.Set, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		s := make(map[string]struct{})
+		s := set.New()
 		ctx.DB.Set(key, &object.Robj{
 			Type:     object.OBJ_SET,
 			Encoding: object.OBJ_ENCODING_HT,
@@ -57,7 +58,7 @@ func getOrCreateSet(ctx *Context, key string) (map[string]struct{}, bool, []byte
 	if obj.Type != object.OBJ_SET {
 		return nil, false, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return nil, false, Error("ERR internal set type error")
 	}
@@ -71,15 +72,12 @@ func saddCommand(ctx *Context, argv [][]byte) []byte {
 		return errReply
 	}
 
-	added := int64(0)
+	members := make([]string, 0, len(argv)-2)
 	for i := 2; i < len(argv); i++ {
-		member := string(argv[i])
-		if _, exists := s[member]; !exists {
-			s[member] = struct{}{}
-			added++
-		}
+		members = append(members, string(argv[i]))
 	}
-	return Integer(added)
+	added := s.Add(members...)
+	return Integer(int64(added))
 }
 
 func sremCommand(ctx *Context, argv [][]byte) []byte {
@@ -91,23 +89,20 @@ func sremCommand(ctx *Context, argv [][]byte) []byte {
 	if obj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return Error("ERR internal set type error")
 	}
 
-	removed := int64(0)
+	members := make([]string, 0, len(argv)-2)
 	for i := 2; i < len(argv); i++ {
-		member := string(argv[i])
-		if _, exists := s[member]; exists {
-			delete(s, member)
-			removed++
-		}
+		members = append(members, string(argv[i]))
 	}
-	if len(s) == 0 {
+	removed := s.Remove(members...)
+	if s.Card() == 0 {
 		ctx.DB.Del(key)
 	}
-	return Integer(removed)
+	return Integer(int64(removed))
 }
 
 func smembersCommand(ctx *Context, argv [][]byte) []byte {
@@ -119,13 +114,14 @@ func smembersCommand(ctx *Context, argv [][]byte) []byte {
 	if obj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return Error("ERR internal set type error")
 	}
 
-	elements := make([][]byte, 0, len(s))
-	for m := range s {
+	mems := s.Members()
+	elements := make([][]byte, 0, len(mems))
+	for _, m := range mems {
 		elements = append(elements, BulkString([]byte(m)))
 	}
 	return Array(elements)
@@ -142,12 +138,12 @@ func sismemberCommand(ctx *Context, argv [][]byte) []byte {
 	if obj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return Error("ERR internal set type error")
 	}
 
-	if _, exists := s[member]; exists {
+	if s.Contains(member) {
 		return Integer(1)
 	}
 	return Integer(0)
@@ -162,11 +158,11 @@ func scardCommand(ctx *Context, argv [][]byte) []byte {
 	if obj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return Error("ERR internal set type error")
 	}
-	return Integer(int64(len(s)))
+	return Integer(int64(s.Card()))
 }
 
 func spopCommand(ctx *Context, argv [][]byte) []byte {
@@ -178,23 +174,17 @@ func spopCommand(ctx *Context, argv [][]byte) []byte {
 	if obj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(map[string]struct{})
+	s, ok := obj.Ptr.(*set.Set)
 	if !ok {
 		return Error("ERR internal set type error")
 	}
 
-	if len(s) == 0 {
+	popped := s.Pop(1)
+	if len(popped) == 0 {
 		return NullBulkString()
 	}
-
-	var popped string
-	for m := range s {
-		popped = m
-		break
-	}
-	delete(s, popped)
-	if len(s) == 0 {
+	if s.Card() == 0 {
 		ctx.DB.Del(key)
 	}
-	return BulkString([]byte(popped))
+	return BulkString([]byte(popped[0]))
 }

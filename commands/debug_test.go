@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func TestDebugAndMemoryCommands(t *testing.T) {

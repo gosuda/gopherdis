@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/acl"
-	"github.com/gosuda/nedis/db"
+	"github.com/gosuda/gopherdis/acl"
+	"github.com/gosuda/gopherdis/db"
 )
 
 func TestACLCommands(t *testing.T) {

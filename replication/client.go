@@ -12,9 +12,9 @@ import (
 	"time"
 
 	"github.com/gosuda/beaver/pure"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/parser"
-	"github.com/gosuda/nedis/rdb"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/parser"
+	"github.com/gosuda/gopherdis/rdb"
 )
 
 // ServerTarget abstracts the server capabilities needed by the replication client.

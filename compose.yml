@@ -1,12 +1,12 @@
 services:
-  nedis:
-    image: ghcr.io/gosuda/nedis:latest
-    container_name: nedis-server
+  gopherdis:
+    image: ghcr.io/gosuda/gopherdis:latest
+    container_name: gopherdis-server
     restart: unless-stopped
     ports:
       - "6379:6379"
     volumes:
-      - nedis-data:/data
+      - gopherdis-data:/data
 
 volumes:
-  nedis-data:
+  gopherdis-data:

@@ -4,9 +4,9 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/cluster"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/pubsub"
+	"github.com/gosuda/gopherdis/cluster"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/pubsub"
 )
 
 func TestSentinelCommands(t *testing.T) {

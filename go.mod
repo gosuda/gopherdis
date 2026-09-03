@@ -1,4 +1,4 @@
-module github.com/gosuda/nedis
+module github.com/gosuda/gopherdis
 
 go 1.24.4
 

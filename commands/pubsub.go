@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gosuda/nedis/pubsub"
+	"github.com/gosuda/gopherdis/pubsub"
 )
 
 func init() {

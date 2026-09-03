@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/gosuda/nedis/acl"
+	"github.com/gosuda/gopherdis/acl"
 )
 
 func init() {

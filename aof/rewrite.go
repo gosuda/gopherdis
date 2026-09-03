@@ -6,11 +6,11 @@ import (
 	"io"
 	"strconv"
 
-	"github.com/gosuda/nedis/datastruct/dict"
-	"github.com/gosuda/nedis/datastruct/quicklist"
-	"github.com/gosuda/nedis/datastruct/skiplist"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
 )
 
 // encodeCommand formats an argv command slice into RESP Multi-bulk format.

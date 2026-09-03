@@ -9,7 +9,7 @@ import (
 	"runtime/debug"
 	"syscall"
 
-	"github.com/gosuda/nedis/server"
+	"github.com/gosuda/gopherdis/server"
 )
 
 func main() {
@@ -26,13 +26,13 @@ func main() {
 
 	go func() {
 		<-sigCh
-		log.Println("Shutting down Nedis...")
+		log.Println("Shutting down Gopherdis...")
 		_ = srv.Close()
 		os.Exit(0)
 	}()
 
-	log.Printf("Nedis server starting on %s ...\n", addr)
+	log.Printf("Gopherdis server starting on %s ...\n", addr)
 	if err := srv.Listen(addr); err != nil {
-		log.Fatalf("Nedis failed: %v", err)
+		log.Fatalf("Gopherdis failed: %v", err)
 	}
 }

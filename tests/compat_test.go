@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/server"
+	"github.com/gosuda/gopherdis/server"
 )
 
 func sendCommand(conn net.Conn, r *bufio.Reader, args ...string) (string, error) {
@@ -85,11 +85,11 @@ func TestFullCompatibilitySuite(t *testing.T) {
 	}()
 
 	// 2. Start Nedis on 16380
-	nedisServer := server.NewServer()
+	gopherdisServer := server.NewServer()
 	go func() {
-		_ = nedisServer.Listen("127.0.0.1:16380")
+		_ = gopherdisServer.Listen("127.0.0.1:16380")
 	}()
-	defer nedisServer.Close()
+	defer gopherdisServer.Close()
 
 	time.Sleep(200 * time.Millisecond)
 

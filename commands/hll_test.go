@@ -5,7 +5,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/db"
+	"github.com/gosuda/gopherdis/db"
 )
 
 func TestHLLCommands(t *testing.T) {

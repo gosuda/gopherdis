@@ -6,7 +6,7 @@ import (
 	"sync"
 	"sync/atomic"
 
-	"github.com/gosuda/nedis/db"
+	"github.com/gosuda/gopherdis/db"
 )
 
 // Manager manages RDB persistence operations (SAVE, BGSAVE, LOAD).

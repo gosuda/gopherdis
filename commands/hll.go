@@ -1,8 +1,8 @@
 package commands
 
 import (
-	"github.com/gosuda/nedis/datastruct/hll"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/hll"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {

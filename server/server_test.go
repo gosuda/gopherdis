@@ -9,9 +9,9 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/aof"
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/rdb"
+	"github.com/gosuda/gopherdis/aof"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/rdb"
 )
 
 func TestServerEndToEnd(t *testing.T) {

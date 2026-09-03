@@ -3,8 +3,8 @@ package commands
 import (
 	"strconv"
 
-	"github.com/gosuda/nedis/datastruct/quicklist"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {

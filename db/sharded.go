@@ -5,7 +5,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/object"
 )
 
 // NumShards is the number of internal partitions for reducing lock contention.

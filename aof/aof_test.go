@@ -8,8 +8,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func TestAOF_FeedAndLoad(t *testing.T) {

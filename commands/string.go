@@ -5,7 +5,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/object"
 )
 
 

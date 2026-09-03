@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func TestAdminCommands(t *testing.T) {
@@ -16,7 +16,7 @@ func TestAdminCommands(t *testing.T) {
 
 	// 1. HELLO 2
 	res := DefaultTable.Execute(ctx, [][]byte{[]byte("HELLO"), []byte("2")})
-	if !strings.HasPrefix(string(res), "*14\r\n") || !strings.Contains(string(res), "nedis") {
+	if !strings.HasPrefix(string(res), "*14\r\n") || !strings.Contains(string(res), "gopherdis") {
 		t.Fatalf("expected RESP2 HELLO array, got %q", res)
 	}
 

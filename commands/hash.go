@@ -4,8 +4,8 @@ import (
 	"bytes"
 	"strconv"
 
-	"github.com/gosuda/nedis/datastruct/dict"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {

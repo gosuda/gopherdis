@@ -179,12 +179,12 @@ func helloCommand(ctx *Context, argv [][]byte) []byte {
 	}
 
 	if proto == 3 {
-		return []byte(fmt.Sprintf("%%7\r\n$6\r\nserver\r\n$5\r\nnedis\r\n$7\r\nversion\r\n$5\r\n7.2.0\r\n$5\r\nproto\r\n:3\r\n$2\r\nid\r\n:1\r\n$4\r\nmode\r\n$10\r\nstandalone\r\n$4\r\nrole\r\n$%d\r\n%s\r\n$7\r\nmodules\r\n*0\r\n", len(role), role))
+		return []byte(fmt.Sprintf("%%7\r\n$6\r\nserver\r\n$9\r\ngopherdis\r\n$7\r\nversion\r\n$5\r\n7.2.0\r\n$5\r\nproto\r\n:3\r\n$2\r\nid\r\n:1\r\n$4\r\nmode\r\n$10\r\nstandalone\r\n$4\r\nrole\r\n$%d\r\n%s\r\n$7\r\nmodules\r\n*0\r\n", len(role), role))
 	}
 
 	return Array([][]byte{
 		BulkString([]byte("server")),
-		BulkString([]byte("nedis")),
+		BulkString([]byte("gopherdis")),
 		BulkString([]byte("version")),
 		BulkString([]byte("7.2.0")),
 		BulkString([]byte("proto")),

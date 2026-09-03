@@ -1,6 +1,6 @@
 # Binaries
 bin/
-/nedis-server
+/gopherdis-server
 *.exe
 *.test
 

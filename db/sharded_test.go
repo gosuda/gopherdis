@@ -6,7 +6,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func TestShardedDBBasic(t *testing.T) {

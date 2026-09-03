@@ -3,7 +3,7 @@ package reply
 import (
 	"fmt"
 
-	"github.com/gosuda/nedis/parser"
+	"github.com/gosuda/gopherdis/parser"
 )
 
 

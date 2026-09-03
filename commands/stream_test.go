@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/gosuda/nedis/db"
+	"github.com/gosuda/gopherdis/db"
 )
 
 func TestStreamCommands(t *testing.T) {

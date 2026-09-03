@@ -4,8 +4,8 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/gosuda/nedis/db"
-	"github.com/gosuda/nedis/scripting"
+	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/scripting"
 )
 
 func TestScriptCommands(t *testing.T) {

@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/nedis/datastruct/skiplist"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {

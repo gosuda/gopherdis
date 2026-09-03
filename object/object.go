@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/gosuda/nedis/datastruct/quicklist"
-	"github.com/gosuda/nedis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/skiplist"
 )
 
 // CreateObject creates a basic Robj with the given type and pointer payload.

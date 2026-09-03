@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/nedis/scripting"
+	"github.com/gosuda/gopherdis/scripting"
 )
 
 var defaultScriptEngine = scripting.NewEngine()
@@ -61,6 +61,13 @@ func evalCommand(ctx *Context, argv [][]byte) []byte {
 		args[i] = string(a)
 	}
 
+	if ctx != nil && ctx.DB != nil {
+		ctx.DB.BeginTx()
+		defer ctx.DB.EndTx()
+		ctx.InTxExecution = true
+		defer func() { ctx.InTxExecution = false }()
+	}
+
 	eng := getScriptEngine(ctx)
 	exec := func(cmdArgv [][]byte) []byte {
 		return DefaultTable.Execute(ctx, cmdArgv)
@@ -83,6 +90,13 @@ func evalshaCommand(ctx *Context, argv [][]byte) []byte {
 
 	if len(argv) < 3+numKeys {
 		return Error("wrong number of arguments for 'evalsha' command")
+	}
+
+	if ctx != nil && ctx.DB != nil {
+		ctx.DB.BeginTx()
+		defer ctx.DB.EndTx()
+		ctx.InTxExecution = true
+		defer func() { ctx.InTxExecution = false }()
 	}
 
 	eng := getScriptEngine(ctx)

@@ -7,8 +7,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/gosuda/nedis/datastruct/stream"
-	"github.com/gosuda/nedis/object"
+	"github.com/gosuda/gopherdis/datastruct/stream"
+	"github.com/gosuda/gopherdis/object"
 )
 
 func init() {
