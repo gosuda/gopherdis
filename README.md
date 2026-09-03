@@ -17,7 +17,7 @@
 
 ## What is Gopherdis?
 
-Gopherdis is an in-memory key-value store written in pure Go that speaks the exact same wire protocol as Redis (RESP2 and RESP3). Any existing Redis client, driver, or tool — including the official `redis-cli` — works against Gopherdis without modification.
+Gopherdis is an in-memory key-value store written in pure Go that speaks the exact same wire protocol as Redis (RESP2 and RESP3). Any existing Redis client, driver, or tool, including the official `redis-cli`, works against Gopherdis without modification.
 
 It is designed for deployments where Redis-compatible semantics are required but a single-threaded event loop wastes the multi-core CPUs that modern servers provide.
 
@@ -25,11 +25,11 @@ It is designed for deployments where Redis-compatible semantics are required but
 
 Official C Redis executes all commands on one thread, so throughput is capped by single-core performance regardless of how many cores the machine has. Gopherdis removes that ceiling while keeping full protocol compatibility and strict concurrency safety:
 
-- **64-shard architecture with transaction isolation** — the keyspace is partitioned across 64 independent database shards, allowing concurrent execution across CPU cores while preserving ACID-like transaction guarantees (`MULTI`/`EXEC`) and atomic script isolation.
-- **Zero-allocation stream engine** — Streams use 8KB fixed chunk slabs from an unmanaged memory arena (`beaver/pure.Pool`), so `XADD`/`XRANGE` bypass Go heap allocations and avoid GC scan pauses that destabilize tail latency.
-- **Thread-safe native data structures** — optimized Swiss-table maps, contiguous cache-friendly Hash `Dict`, concurrent `Set`, and hardware-accelerated Bitmaps.
-- **Bytecode-cached Lua engine** — scripts are compiled into bytecode prototypes (`*lua.FunctionProto`) and executed concurrently on an elastic pool of isolated Lua VMs with transaction-safe state isolation.
-- **Predictive clustering** — standard 16,384 CRC16 hash slots with `-MOVED` redirection, plus a topology graph, an EWMA anomaly predictor that detects node exhaustion before failure, and shadow-master pre-provisioning for zero-downtime handover with epoch fencing tokens.
+- **64-shard architecture with transaction isolation**: The keyspace is partitioned across 64 independent database shards, allowing concurrent execution across CPU cores while preserving ACID-like transaction guarantees (`MULTI`/`EXEC`) and atomic script isolation.
+- **Zero-allocation stream engine**: Streams use 8KB fixed chunk slabs from an unmanaged memory arena (`beaver/pure.Pool`), so `XADD`/`XRANGE` bypass Go heap allocations and avoid GC scan pauses that destabilize tail latency.
+- **Thread-safe native data structures**: Optimized Swiss-table maps, contiguous cache-friendly Hash `Dict`, concurrent `Set`, and hardware-accelerated Bitmaps.
+- **Bytecode-cached Lua engine**: Scripts are compiled into bytecode prototypes (`*lua.FunctionProto`) and executed concurrently on an elastic pool of isolated Lua VMs with transaction-safe state isolation.
+- **Predictive clustering**: Standard 16,384 CRC16 hash slots with `-MOVED` redirection, plus a topology graph, an EWMA anomaly predictor that detects node exhaustion before failure, and shadow-master pre-provisioning for zero-downtime handover with epoch fencing tokens.
 
 ## How fast is it?
 
@@ -55,7 +55,7 @@ Tail-latency percentages are versus the C Redis row of the same workload; negati
 
 ### Memory Characteristics (`used_memory_rss` growth)
 
-At realistic dataset sizes, Gopherdis and C Redis reach memory parity — 2M keys × 1KB values (~1.6GB payload):
+At realistic dataset sizes, Gopherdis and C Redis reach memory parity (2M keys × 1KB values, ~1.6GB payload):
 
 | Target | Memory Delta | vs C Redis |
 |---|:---:|:---:|
