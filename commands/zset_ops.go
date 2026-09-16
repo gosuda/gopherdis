@@ -37,7 +37,9 @@ func scoreBound(s string) (val float64, exclusive bool, ok bool) {
 		return math.Inf(-1), exclusive, true
 	}
 	v, err := strconv.ParseFloat(s, 64)
-	if err != nil {
+	// ParseFloat accepts "NaN", but a NaN bound cannot order against anything,
+	// so Redis rejects it as a non-float.
+	if err != nil || math.IsNaN(v) {
 		return 0, false, false
 	}
 	return v, exclusive, true
@@ -105,7 +107,10 @@ func zrangeByScoreGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 			picked = append(picked, el)
 		}
 	}
-	if offset > 0 {
+	if offset < 0 {
+		// Redis returns nothing for a negative offset rather than clamping.
+		picked = nil
+	} else if offset > 0 {
 		if offset >= len(picked) {
 			picked = nil
 		} else {

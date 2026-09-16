@@ -115,7 +115,9 @@ func lexGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 			items[i], items[j] = items[j], items[i]
 		}
 	}
-	if offset > 0 {
+	if offset < 0 {
+		items = nil
+	} else if offset > 0 {
 		if offset >= len(items) {
 			items = nil
 		} else {
@@ -298,7 +300,9 @@ func zrangeSelect(ctx *Context, args [][]byte) ([]skiplist.ZSetElement, []byte) 
 		items = z.Range(start, stop, reverse)
 	}
 
-	if offset > 0 {
+	if offset < 0 {
+		items = nil
+	} else if offset > 0 {
 		if offset >= len(items) {
 			items = nil
 		} else {

@@ -918,3 +918,78 @@ func TestCopyStream(t *testing.T) {
 		t.Errorf("copied stream lost entries: %q", got)
 	}
 }
+
+func TestZsetSetOperations(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "a", "1", "a", "1", "b", "1", "c")
+	run(t, ctx, "ZADD", "b", "1", "b", "1", "c", "1", "d")
+
+	if got := run(t, ctx, "ZUNIONSTORE", "u", "2", "a", "b"); got != ":4\r\n" {
+		t.Errorf("ZUNIONSTORE = %q, want :4", got)
+	}
+	if got := run(t, ctx, "ZSCORE", "u", "b"); !strings.Contains(got, "2") {
+		t.Errorf("SUM aggregation = %q, want 2", got)
+	}
+	if got := run(t, ctx, "ZINTERSTORE", "i", "2", "a", "b"); got != ":2\r\n" {
+		t.Errorf("ZINTERSTORE = %q, want :2", got)
+	}
+	if got := run(t, ctx, "ZDIFFSTORE", "d", "2", "a", "b"); got != ":1\r\n" {
+		t.Errorf("ZDIFFSTORE = %q, want :1", got)
+	}
+
+	// WEIGHTS and AGGREGATE.
+	run(t, ctx, "ZUNIONSTORE", "w", "2", "a", "b", "WEIGHTS", "2", "3")
+	if got := run(t, ctx, "ZSCORE", "w", "b"); !strings.Contains(got, "5") {
+		t.Errorf("WEIGHTS = %q, want 2+3", got)
+	}
+	run(t, ctx, "ZUNIONSTORE", "m", "2", "a", "b", "AGGREGATE", "MAX")
+	if got := run(t, ctx, "ZSCORE", "m", "b"); !strings.Contains(got, "1") {
+		t.Errorf("AGGREGATE MAX = %q", got)
+	}
+	// AGGREGATE COUNT scores by how many inputs hold the member.
+	if got := run(t, ctx, "ZUNION", "2", "a", "b", "AGGREGATE", "COUNT", "WITHSCORES"); !strings.Contains(got, "b\r\n$1\r\n2") {
+		t.Errorf("AGGREGATE COUNT = %q, want b scored 2", got)
+	}
+	if got := run(t, ctx, "ZUNIONSTORE", "x", "2", "a", "b", "AGGREGATE", "NONSENSE"); !strings.Contains(got, "syntax error") {
+		t.Errorf("an unknown aggregate should be rejected, got %q", got)
+	}
+
+	// A plain set counts as a sorted set whose members all score 1.
+	run(t, ctx, "SADD", "plain", "b", "z")
+	if got := run(t, ctx, "ZUNIONSTORE", "mix", "2", "a", "plain"); got != ":4\r\n" {
+		t.Errorf("union with a plain set = %q, want :4", got)
+	}
+	if got := run(t, ctx, "ZSCORE", "mix", "b"); !strings.Contains(got, "2") {
+		t.Errorf("set member should contribute score 1: %q", got)
+	}
+
+	if got := run(t, ctx, "ZINTERCARD", "2", "a", "b"); got != ":2\r\n" {
+		t.Errorf("ZINTERCARD = %q", got)
+	}
+	if got := run(t, ctx, "ZINTERCARD", "2", "a", "b", "LIMIT", "1"); got != ":1\r\n" {
+		t.Errorf("ZINTERCARD LIMIT = %q", got)
+	}
+	if got := run(t, ctx, "ZUNIONSTORE", "z", "0", "a"); !strings.Contains(got, "at least 1 input key") {
+		t.Errorf("numkeys 0 should be rejected, got %q", got)
+	}
+}
+
+func TestZsetRangeEdgeCases(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "z", "1", "a", "2", "b", "3", "c")
+
+	// A negative LIMIT offset returns nothing rather than the whole range.
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "0", "10", "LIMIT", "-1", "2"); got != "*0\r\n" {
+		t.Errorf("negative LIMIT offset = %q, want empty", got)
+	}
+	// NaN is not an orderable bound.
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "1", "NaN"); !strings.Contains(got, "not a float") {
+		t.Errorf("NaN bound = %q, want a float error", got)
+	}
+	if got := run(t, ctx, "ZCOUNT", "z", "(1", "3"); got != ":2\r\n" {
+		t.Errorf("ZCOUNT with an exclusive bound = %q, want :2", got)
+	}
+	if got := run(t, ctx, "ZCOUNT", "z", "-inf", "+inf"); got != ":3\r\n" {
+		t.Errorf("ZCOUNT with infinities = %q", got)
+	}
+}
