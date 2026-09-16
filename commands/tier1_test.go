@@ -894,3 +894,27 @@ func TestZsetLexAndUnifiedRange(t *testing.T) {
 		t.Errorf("ZRANGESTORE destination = %q", got)
 	}
 }
+
+func TestCopyStream(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "XADD", "st", "1-1", "f", "v")
+	run(t, ctx, "XADD", "st", "2-1", "g", "w")
+
+	if got := run(t, ctx, "COPY", "st", "st2"); got != ":1\r\n" {
+		t.Fatalf("COPY of a stream = %q", got)
+	}
+	if got := run(t, ctx, "XLEN", "st2"); got != ":2\r\n" {
+		t.Errorf("copied stream length = %q", got)
+	}
+	// The copy must be independent: trimming one cannot affect the other.
+	run(t, ctx, "XTRIM", "st", "MAXLEN", "1")
+	if got := run(t, ctx, "XLEN", "st"); got != ":1\r\n" {
+		t.Errorf("source after trim = %q", got)
+	}
+	if got := run(t, ctx, "XLEN", "st2"); got != ":2\r\n" {
+		t.Errorf("copy was affected by trimming the source: %q", got)
+	}
+	if got := run(t, ctx, "XRANGE", "st2", "-", "+"); !strings.Contains(got, "1-1") {
+		t.Errorf("copied stream lost entries: %q", got)
+	}
+}

@@ -9,16 +9,30 @@ import (
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/datastruct/stream"
 	"github.com/gosuda/gopherdis/object"
 )
 
 // cloneContainer deep copies a container value so that COPY produces an
 // independent key rather than a second name for the same payload.
-//
-// Streams are not cloned: their entries live in a shared arena, so handing the
-// same arena to two keys would let a trim on one corrupt reads on the other.
 func cloneContainer(obj *object.Robj) (*object.Robj, bool) {
 	switch v := obj.Ptr.(type) {
+	case *stream.Stream:
+		// A stream's entries live in a shared arena, so the copy has to be
+		// rebuilt by replaying the entries rather than by handing the same
+		// arena to a second key, where a trim on one would corrupt the other.
+		dup := stream.NewStream()
+		for _, e := range v.Range(stream.ZeroID, stream.MaxID, 0, false) {
+			vals := make([][]byte, len(e.Values))
+			for i, val := range e.Values {
+				vals[i] = bytes.Clone(val)
+			}
+			if _, err := dup.Add(e.ID, e.Fields, vals, 0, false); err != nil {
+				return nil, false
+			}
+		}
+		return &object.Robj{Type: obj.Type, Encoding: obj.Encoding, Ptr: dup}, true
+
 	case *listpack.Listpack:
 		lp := listpack.New()
 		for _, e := range v.All() {
