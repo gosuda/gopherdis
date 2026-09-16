@@ -740,3 +740,67 @@ func TestListReshapeAcrossEncodings(t *testing.T) {
 		t.Errorf("rebuild demoted a list holding an oversized element: %q", got)
 	}
 }
+
+func TestZrankWithScore(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "z", "1", "a", "2", "b")
+
+	if got := run(t, ctx, "ZRANK", "z", "b"); got != ":1\r\n" {
+		t.Errorf("ZRANK = %q", got)
+	}
+	if got := run(t, ctx, "ZRANK", "z", "b", "WITHSCORE"); !strings.HasPrefix(got, "*2\r\n:1\r\n") {
+		t.Errorf("ZRANK WITHSCORE = %q, want a rank and score pair", got)
+	}
+	// A missing member replies with a nil array in the WITHSCORE form, because
+	// the present form is a two element array.
+	if got := run(t, ctx, "ZRANK", "z", "nope", "WITHSCORE"); got != "*-1\r\n" {
+		t.Errorf("ZRANK WITHSCORE on a missing member = %q, want a nil array", got)
+	}
+	if got := run(t, ctx, "ZRANK", "z", "nope"); got != "$-1\r\n" {
+		t.Errorf("ZRANK on a missing member = %q, want a nil bulk", got)
+	}
+	if got := run(t, ctx, "ZRANK", "z", "b", "NONSENSE"); !strings.Contains(got, "syntax error") {
+		t.Errorf("ZRANK with a bad option = %q", got)
+	}
+	if got := run(t, ctx, "ZREVRANK", "z", "b", "WITHSCORE"); !strings.HasPrefix(got, "*2\r\n:0\r\n") {
+		t.Errorf("ZREVRANK WITHSCORE = %q", got)
+	}
+}
+
+// TestDebugDigestValue checks the digest ignores encoding and, for unordered
+// containers, insertion order.
+func TestDebugDigestValue(t *testing.T) {
+	ctx := newCtx()
+
+	run(t, ctx, "SADD", "s1", "a", "b", "c")
+	run(t, ctx, "SADD", "s2", "c", "b", "a")
+	d1 := run(t, ctx, "DEBUG", "DIGEST-VALUE", "s1")
+	d2 := run(t, ctx, "DEBUG", "DIGEST-VALUE", "s2")
+	if d1 != d2 {
+		t.Errorf("set digest depends on insertion order:\n %q\n %q", d1, d2)
+	}
+
+	// Same members, different encodings, same digest.
+	run(t, ctx, "SADD", "ints1", "1", "2", "3")
+	run(t, ctx, "SADD", "ints2", "1", "2", "3", strings.Repeat("x", 100))
+	run(t, ctx, "SREM", "ints2", strings.Repeat("x", 100))
+	if enc := run(t, ctx, "OBJECT", "ENCODING", "ints2"); !strings.Contains(enc, "hashtable") {
+		t.Fatalf("setup: ints2 should have been promoted, got %q", enc)
+	}
+	if a, b := run(t, ctx, "DEBUG", "DIGEST-VALUE", "ints1"), run(t, ctx, "DEBUG", "DIGEST-VALUE", "ints2"); a != b {
+		t.Errorf("digest differs across encodings:\n %q\n %q", a, b)
+	}
+
+	// A different value must produce a different digest.
+	run(t, ctx, "SADD", "s3", "a", "b", "d")
+	if run(t, ctx, "DEBUG", "DIGEST-VALUE", "s3") == d1 {
+		t.Error("different sets produced the same digest")
+	}
+
+	// Lists are ordered, so order matters there.
+	run(t, ctx, "RPUSH", "l1", "a", "b")
+	run(t, ctx, "RPUSH", "l2", "b", "a")
+	if run(t, ctx, "DEBUG", "DIGEST-VALUE", "l1") == run(t, ctx, "DEBUG", "DIGEST-VALUE", "l2") {
+		t.Error("list digest ignored order")
+	}
+}

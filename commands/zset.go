@@ -26,13 +26,13 @@ func init() {
 	DefaultTable.Register(&Command{
 		Name:    "zrank",
 		Handler: zrankCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagFast | FlagReadOnly,
 	})
 	DefaultTable.Register(&Command{
 		Name:    "zrevrank",
 		Handler: zrevrankCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagFast | FlagReadOnly,
 	})
 	DefaultTable.Register(&Command{
@@ -248,14 +248,38 @@ func zrevrankCommand(ctx *Context, argv [][]byte) []byte {
 
 func zrankGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 	key := string(argv[1])
+
+	withScore := false
+	if len(argv) == 4 {
+		if !strings.EqualFold(string(argv[3]), "WITHSCORE") {
+			return Error("syntax error")
+		}
+		withScore = true
+	} else if len(argv) > 4 {
+		return Error("syntax error")
+	}
+
 	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
 
-	rank, found := zs.Rank(string(argv[2]), reverse)
+	member := string(argv[2])
+	rank, found := zs.Rank(member, reverse)
 	if !found {
+		// WITHSCORE replies with a nil array rather than a nil bulk string,
+		// because the non-nil form is a two element array.
+		if withScore {
+			return NullArray()
+		}
 		return NullBulkString()
+	}
+	if withScore {
+		score, _ := zs.Score(member)
+		return Array([][]byte{
+			Integer(rank),
+			BulkString([]byte(formatFloat(score))),
+		})
 	}
 	return Integer(rank)
 }

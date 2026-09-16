@@ -255,6 +255,46 @@ func (s *Server) handleConnection(conn net.Conn) {
 			continue
 		}
 
+		// SYNC is the pre-2.8 replication handshake, and the official test suite
+		// uses it to observe the command stream: unlike PSYNC it sends the RDB
+		// payload with no +FULLRESYNC header, then streams writes.
+		if strings.ToLower(string(argv[0])) == "sync" && s.Replication != nil {
+			session, _, payload, err := s.Replication.HandlePSync("", -1)
+			defer s.Replication.UnregisterReplica(session)
+			if err != nil {
+				writeMu.Lock()
+				writeError(writer, err.Error())
+				writer.Flush()
+				writeMu.Unlock()
+				return
+			}
+
+			writeMu.Lock()
+			writer.Write(payload)
+			writer.Flush()
+			writeMu.Unlock()
+
+			for {
+				select {
+				case msg, ok := <-session.MsgCh:
+					if !ok {
+						return
+					}
+					writeMu.Lock()
+					_, werr := writer.Write(msg)
+					if werr == nil {
+						werr = writer.Flush()
+					}
+					writeMu.Unlock()
+					if werr != nil {
+						return
+					}
+				case <-session.Done:
+					return
+				}
+			}
+		}
+
 		// Handle PSYNC replication command from replica
 		if strings.ToLower(string(argv[0])) == "psync" && s.Replication != nil {
 			replID := ""

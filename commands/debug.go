@@ -151,6 +151,16 @@ func debugCommand(ctx *Context, argv [][]byte) []byte {
 		digest := hex.EncodeToString(h.Sum(nil))
 		return SimpleString(digest)
 
+	case "DIGEST-VALUE":
+		if ctx == nil || ctx.DB == nil {
+			return Error("DEBUG DIGEST-VALUE requires a database")
+		}
+		digests := make([][]byte, 0, len(argv)-2)
+		for i := 2; i < len(argv); i++ {
+			digests = append(digests, SimpleString(digestValue(ctx, string(argv[i]))))
+		}
+		return Array(digests)
+
 	case "SET-ACTIVE-EXPIRE":
 		if len(argv) < 3 {
 			return Error("wrong number of arguments for 'debug set-active-expire'")
