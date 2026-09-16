@@ -26,6 +26,7 @@ type ShardedDB struct {
 	evictionPolicy int32  // EvictionPolicy enum
 	usedMemory     int64  // Approximate used memory in bytes
 	watchers       int64  // Number of keys currently under WATCH (gates version tracking)
+	noActiveExpire int32  // 1 disables the active expiry cycle (DEBUG SET-ACTIVE-EXPIRE)
 	cronStopCh     chan struct{}
 	cronRunning    bool
 	cronMu         sync.Mutex
@@ -121,7 +122,9 @@ func (db *ShardedDB) StartCron(interval time.Duration) {
 		for {
 			select {
 			case <-ticker.C:
-				db.ActiveExpireCycle()
+				if atomic.LoadInt32(&db.noActiveExpire) == 0 {
+					db.ActiveExpireCycle()
+				}
 				_ = db.FreeMemoryIfNeeded()
 			case <-db.cronStopCh:
 				return
@@ -400,6 +403,17 @@ func (db *ShardedDB) RemoveWatchers(n int64) {
 		}
 		s.Unlock()
 	}
+}
+
+// SetActiveExpire enables or disables the background expiry cycle. Tests use it
+// to observe keys that are logically expired but not yet reclaimed; lazy
+// expiration on read still applies either way.
+func (db *ShardedDB) SetActiveExpire(enabled bool) {
+	var v int32
+	if !enabled {
+		v = 1
+	}
+	atomic.StoreInt32(&db.noActiveExpire, v)
 }
 
 // Touch bumps a key's modification version without otherwise changing it.

@@ -338,6 +338,12 @@ func (s *Server) handleConnection(conn net.Conn) {
 			return
 		}
 		writeMu.Unlock()
+
+		// QUIT is the one command whose contract is that the server hangs up
+		// after replying, so the handler cannot implement it on its own.
+		if cmdName == "quit" {
+			return
+		}
 	}
 }
 

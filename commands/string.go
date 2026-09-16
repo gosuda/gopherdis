@@ -91,6 +91,17 @@ func init() {
 		Arity:   4,
 		Flags:   FlagReadOnly,
 	})
+	reg := func(name string, h CommandHandler, arity int, flags CommandFlags) {
+		DefaultTable.Register(&Command{Name: name, Handler: h, Arity: arity, Flags: flags})
+	}
+	reg("setnx", setnxCommand, 3, FlagWrite|FlagFast)
+	reg("setex", setexCommand, 4, FlagWrite)
+	reg("psetex", psetexCommand, 4, FlagWrite)
+	reg("getset", getsetCommand, 3, FlagWrite|FlagFast)
+	reg("getdel", getdelCommand, 2, FlagWrite|FlagFast)
+	reg("getex", getexCommand, -2, FlagWrite|FlagFast)
+	reg("msetnx", msetnxCommand, -3, FlagWrite)
+	reg("substr", getrangeCommand, 4, FlagReadOnly)
 }
 
 func setrangeCommand(ctx *Context, argv [][]byte) []byte {
@@ -242,47 +253,239 @@ func getCommand(ctx *Context, argv [][]byte) []byte {
 
 func setCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	val := object.TryEncodeString(argv[2])
 
-	var ttl time.Duration
-	var hasTTL bool
+	var (
+		ttl     time.Duration
+		hasTTL  bool
+		expAt   int64
+		nx, xx  bool
+		getOld  bool
+		keepTTL bool
+	)
 
 	for i := 3; i < len(argv); i++ {
 		opt := strings.ToUpper(string(argv[i]))
 		switch opt {
-		case "EX":
+		case "EX", "PX", "EXAT", "PXAT":
 			if i+1 >= len(argv) {
 				return Error("syntax error")
 			}
-			sec, err := strconv.ParseInt(string(argv[i+1]), 10, 64)
-			if err != nil || sec <= 0 {
-				return Error("invalid expire time in 'set' command")
+			n, err := strconv.ParseInt(string(argv[i+1]), 10, 64)
+			if err != nil {
+				return Error("value is not an integer or out of range")
 			}
-			ttl = time.Duration(sec) * time.Second
-			hasTTL = true
+			switch opt {
+			case "EX":
+				if n <= 0 {
+					return Error("invalid expire time in 'set' command")
+				}
+				ttl, hasTTL = time.Duration(n)*time.Second, true
+			case "PX":
+				if n <= 0 {
+					return Error("invalid expire time in 'set' command")
+				}
+				ttl, hasTTL = time.Duration(n)*time.Millisecond, true
+			case "EXAT":
+				expAt = n * 1000
+			case "PXAT":
+				expAt = n
+			}
 			i++
-		case "PX":
-			if i+1 >= len(argv) {
-				return Error("syntax error")
-			}
-			ms, err := strconv.ParseInt(string(argv[i+1]), 10, 64)
-			if err != nil || ms <= 0 {
-				return Error("invalid expire time in 'set' command")
-			}
-			ttl = time.Duration(ms) * time.Millisecond
-			hasTTL = true
-			i++
+		case "NX":
+			nx = true
+		case "XX":
+			xx = true
+		case "GET":
+			getOld = true
+		case "KEEPTTL":
+			keepTTL = true
 		default:
 			return Error("syntax error")
 		}
 	}
+	if nx && xx {
+		return Error("syntax error")
+	}
 
-	if hasTTL {
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	old, _ := ctx.DB.Get(key)
+	exists := old != nil
+
+	// GET reports the previous value, and must reject a non-string one even if
+	// the write itself would have been skipped.
+	var oldReply []byte
+	if getOld {
+		if exists && old.Type != object.OBJ_STRING {
+			return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		if exists {
+			oldReply = BulkString(old.Bytes())
+		} else {
+			oldReply = NullBulkString()
+		}
+	}
+
+	if (nx && exists) || (xx && !exists) {
+		if getOld {
+			return oldReply
+		}
+		return NullBulkString()
+	}
+
+	val := object.TryEncodeString(argv[2])
+	switch {
+	case hasTTL:
 		ctx.DB.SetWithExpire(key, val, ttl)
-	} else {
+	case expAt > 0:
+		ctx.DB.Set(key, val)
+		ctx.DB.SetExpireAt(key, expAt)
+	case keepTTL:
+		ctx.DB.SetKeepTTL(key, val)
+	default:
 		ctx.DB.Set(key, val)
 	}
+
+	if getOld {
+		return oldReply
+	}
 	return OK()
+}
+
+func setnxCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	if ctx.DB.Exists(key) {
+		return Integer(0)
+	}
+	ctx.DB.Set(key, object.TryEncodeString(argv[2]))
+	return Integer(1)
+}
+
+// setexGeneric backs SETEX (seconds) and PSETEX (milliseconds).
+func setexGeneric(ctx *Context, argv [][]byte, unit time.Duration) []byte {
+	key := string(argv[1])
+	n, err := strconv.ParseInt(string(argv[2]), 10, 64)
+	if err != nil {
+		return Error("value is not an integer or out of range")
+	}
+	if n <= 0 {
+		return Error("invalid expire time in 'setex' command")
+	}
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	ctx.DB.SetWithExpire(key, object.TryEncodeString(argv[3]), time.Duration(n)*unit)
+	return OK()
+}
+
+func setexCommand(ctx *Context, argv [][]byte) []byte {
+	return setexGeneric(ctx, argv, time.Second)
+}
+
+func psetexCommand(ctx *Context, argv [][]byte) []byte {
+	return setexGeneric(ctx, argv, time.Millisecond)
+}
+
+func getsetCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	old, ok := ctx.DB.Get(key)
+	if ok && old != nil && old.Type != object.OBJ_STRING {
+		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	ctx.DB.Set(key, object.TryEncodeString(argv[2]))
+	if !ok || old == nil {
+		return NullBulkString()
+	}
+	return BulkString(old.Bytes())
+}
+
+func getdelCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return NullBulkString()
+	}
+	if obj.Type != object.OBJ_STRING {
+		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	out := BulkString(obj.Bytes())
+	ctx.DB.Del(key)
+	return out
+}
+
+func getexCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return NullBulkString()
+	}
+	if obj.Type != object.OBJ_STRING {
+		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	out := BulkString(obj.Bytes())
+
+	for i := 2; i < len(argv); i++ {
+		opt := strings.ToUpper(string(argv[i]))
+		if opt == "PERSIST" {
+			ctx.DB.Persist(key)
+			return out
+		}
+		if i+1 >= len(argv) {
+			return Error("syntax error")
+		}
+		n, err := strconv.ParseInt(string(argv[i+1]), 10, 64)
+		if err != nil {
+			return Error("value is not an integer or out of range")
+		}
+		switch opt {
+		case "EX":
+			ctx.DB.SetExpire(key, time.Duration(n)*time.Second)
+		case "PX":
+			ctx.DB.SetExpire(key, time.Duration(n)*time.Millisecond)
+		case "EXAT":
+			ctx.DB.SetExpireAt(key, n*1000)
+		case "PXAT":
+			ctx.DB.SetExpireAt(key, n)
+		default:
+			return Error("syntax error")
+		}
+		i++
+	}
+	return out
+}
+
+func msetnxCommand(ctx *Context, argv [][]byte) []byte {
+	pairs := argv[1:]
+	if len(pairs)%2 != 0 {
+		return Error("wrong number of arguments for 'msetnx' command")
+	}
+	// All or nothing: if any key exists, nothing is written.
+	for i := 0; i < len(pairs); i += 2 {
+		if ctx.DB.Exists(string(pairs[i])) {
+			return Integer(0)
+		}
+	}
+	for i := 0; i < len(pairs); i += 2 {
+		ctx.DB.Set(string(pairs[i]), object.TryEncodeString(pairs[i+1]))
+	}
+	return Integer(1)
 }
 
 func mgetCommand(ctx *Context, argv [][]byte) []byte {

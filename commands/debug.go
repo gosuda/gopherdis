@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/gosuda/gopherdis/glob"
 )
 
 func init() {
@@ -148,6 +150,37 @@ func debugCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		digest := hex.EncodeToString(h.Sum(nil))
 		return SimpleString(digest)
+
+	case "SET-ACTIVE-EXPIRE":
+		if len(argv) < 3 {
+			return Error("wrong number of arguments for 'debug set-active-expire'")
+		}
+		on, err := strconv.Atoi(string(argv[2]))
+		if err != nil {
+			return Error("value is not an integer or out of range")
+		}
+		if ctx != nil && ctx.DB != nil {
+			ctx.DB.SetActiveExpire(on != 0)
+		}
+		return OK()
+
+	case "QUICKLIST-PACKED-THRESHOLD", "LISTPACK", "LISTPACK-ENTRIES", "CHANGE-REPL-ID":
+		// Accepted so the suite can proceed. Gopherdis has a single list
+		// representation and no packed-entry threshold to tune, so there is
+		// nothing behind these beyond acknowledging them.
+		return OK()
+
+	case "JMAP":
+		return OK()
+
+	case "STRINGMATCH-LEN":
+		if len(argv) < 4 {
+			return Error("wrong number of arguments for 'debug stringmatch-len'")
+		}
+		if glob.Match(string(argv[2]), string(argv[3])) {
+			return Integer(1)
+		}
+		return Integer(0)
 
 	case "SLEEP":
 		if len(argv) < 3 {
