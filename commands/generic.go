@@ -3,6 +3,7 @@ package commands
 import (
 	"fmt"
 	"strconv"
+	"strings"
 	"time"
 )
 
@@ -46,25 +47,25 @@ func init() {
 	DefaultTable.Register(&Command{
 		Name:    "expire",
 		Handler: expireCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagWrite | FlagFast,
 	})
 	DefaultTable.Register(&Command{
 		Name:    "pexpire",
 		Handler: pexpireCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagWrite | FlagFast,
 	})
 	DefaultTable.Register(&Command{
 		Name:    "expireat",
 		Handler: expireatCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagWrite | FlagFast,
 	})
 	DefaultTable.Register(&Command{
 		Name:    "pexpireat",
 		Handler: pexpireatCommand,
-		Arity:   3,
+		Arity:   -3,
 		Flags:   FlagWrite | FlagFast,
 	})
 	DefaultTable.Register(&Command{
@@ -126,54 +127,102 @@ func validExpireMillis(ms int64) bool {
 	return ms <= maxExpireMillis && ms >= -maxExpireMillis
 }
 
-func expireCommand(ctx *Context, argv [][]byte) []byte {
-	secs, err := strconv.ParseInt(string(argv[2]), 10, 64)
+// expireGeneric backs EXPIRE, PEXPIRE, EXPIREAT and PEXPIREAT, including the
+// NX, XX, GT and LT conditions Redis 7 added.
+//
+// A key with no TTL counts as expiring at infinity, so GT never overwrites it
+// and LT always does.
+func expireGeneric(ctx *Context, argv [][]byte, kind string) []byte {
+	n, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
 	}
-	if !validExpireSeconds(secs) {
-		return Error("invalid expire time in 'expire' command")
+
+	var nx, xx, gt, lt bool
+	for i := 3; i < len(argv); i++ {
+		switch strings.ToUpper(string(argv[i])) {
+		case "NX":
+			nx = true
+		case "XX":
+			xx = true
+		case "GT":
+			gt = true
+		case "LT":
+			lt = true
+		default:
+			return Error("Unsupported option " + string(argv[i]))
+		}
 	}
-	if ctx.DB.SetExpire(string(argv[1]), time.Duration(secs)*time.Second) {
+	if (gt && lt) || (nx && (xx || gt || lt)) {
+		return Error("NX and XX, GT or LT options at the same time are not compatible")
+	}
+
+	key := string(argv[1])
+	now := time.Now().UnixMilli()
+
+	var absMs int64
+	switch kind {
+	case "expire":
+		if !validExpireSeconds(n) {
+			return Error("invalid expire time in 'expire' command")
+		}
+		absMs = now + n*1000
+	case "pexpire":
+		if !validExpireMillis(n) {
+			return Error("invalid expire time in 'pexpire' command")
+		}
+		absMs = now + n
+	case "expireat":
+		absMs = n * 1000
+	default:
+		absMs = n
+	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	if !ctx.DB.Exists(key) {
+		return Integer(0)
+	}
+
+	// Current deadline, or 0 when the key has no TTL.
+	var current int64
+	if d, code := ctx.DB.TTL(key); code == 0 {
+		current = now + d.Milliseconds()
+	}
+	hasTTL := current != 0
+
+	switch {
+	case nx && hasTTL:
+		return Integer(0)
+	case xx && !hasTTL:
+		return Integer(0)
+	case gt && (!hasTTL || absMs <= current):
+		return Integer(0)
+	case lt && hasTTL && absMs >= current:
+		return Integer(0)
+	}
+
+	if ctx.DB.SetExpireAt(key, absMs) {
 		return Integer(1)
 	}
 	return Integer(0)
+}
+
+func expireCommand(ctx *Context, argv [][]byte) []byte {
+	return expireGeneric(ctx, argv, "expire")
 }
 
 func pexpireCommand(ctx *Context, argv [][]byte) []byte {
-	ms, err := strconv.ParseInt(string(argv[2]), 10, 64)
-	if err != nil {
-		return Error("value is not an integer or out of range")
-	}
-	if !validExpireMillis(ms) {
-		return Error("invalid expire time in 'pexpire' command")
-	}
-	if ctx.DB.SetExpire(string(argv[1]), time.Duration(ms)*time.Millisecond) {
-		return Integer(1)
-	}
-	return Integer(0)
+	return expireGeneric(ctx, argv, "pexpire")
 }
 
 func expireatCommand(ctx *Context, argv [][]byte) []byte {
-	unixSecs, err := strconv.ParseInt(string(argv[2]), 10, 64)
-	if err != nil {
-		return Error("value is not an integer or out of range")
-	}
-	if ctx.DB.SetExpireAt(string(argv[1]), unixSecs*1000) {
-		return Integer(1)
-	}
-	return Integer(0)
+	return expireGeneric(ctx, argv, "expireat")
 }
 
 func pexpireatCommand(ctx *Context, argv [][]byte) []byte {
-	unixMs, err := strconv.ParseInt(string(argv[2]), 10, 64)
-	if err != nil {
-		return Error("value is not an integer or out of range")
-	}
-	if ctx.DB.SetExpireAt(string(argv[1]), unixMs) {
-		return Integer(1)
-	}
-	return Integer(0)
+	return expireGeneric(ctx, argv, "pexpireat")
 }
 
 func pingCommand(ctx *Context, argv [][]byte) []byte {

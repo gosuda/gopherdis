@@ -22,11 +22,13 @@ type shard struct {
 // ShardedDB is an in-memory key-value database partitioned into multiple shards.
 type ShardedDB struct {
 	shards         [NumShards]shard
-	maxMemory      int64  // Maximum memory in bytes (0 = unlimited)
-	evictionPolicy int32  // EvictionPolicy enum
-	usedMemory     int64  // Approximate used memory in bytes
-	watchers       int64  // Number of keys currently under WATCH (gates version tracking)
-	noActiveExpire int32  // 1 disables the active expiry cycle (DEBUG SET-ACTIVE-EXPIRE)
+	maxMemory      int64 // Maximum memory in bytes (0 = unlimited)
+	evictionPolicy int32 // EvictionPolicy enum
+	usedMemory     int64 // Approximate used memory in bytes
+	watchers       int64 // Number of keys currently under WATCH (gates version tracking)
+	noActiveExpire int32 // 1 disables the active expiry cycle (DEBUG SET-ACTIVE-EXPIRE)
+	expiredKeys    int64 // Count of keys reclaimed by expiry, for INFO
+	onExpired      atomic.Pointer[func(key string)]
 	cronStopCh     chan struct{}
 	cronRunning    bool
 	cronMu         sync.Mutex
@@ -180,14 +182,20 @@ func (db *ShardedDB) Get(key string) (*object.Robj, bool) {
 		s.RUnlock()
 		// Lazy deletion of expired key
 		s.Lock()
+		reclaimed := false
 		if s.isExpired(key, now) {
 			if oldObj, exists := s.entries[key]; exists {
 				db.subMem(estimateObjectSize(key, oldObj))
+				reclaimed = true
 			}
 			delete(s.entries, key)
 			delete(s.expires, key)
+			s.bumpVersion(db, key)
 		}
 		s.Unlock()
+		if reclaimed {
+			db.notifyExpired(key)
+		}
 		return nil, false
 	}
 	val, ok := s.entries[key]
@@ -260,7 +268,6 @@ func (db *ShardedDB) SetWithExpire(key string, val *object.Robj, ttl time.Durati
 	db.addMem(newSize)
 	return nil
 }
-
 
 // SetKeepTTL replaces a key's value while preserving any TTL already set on it.
 // Commands that rewrite a payload in place (SETBIT growing its bitmap, ...) use it
@@ -405,6 +412,39 @@ func (db *ShardedDB) RemoveWatchers(n int64) {
 	}
 }
 
+// SetExpiredCallback registers a hook invoked after a key is reclaimed because
+// it expired.
+//
+// A replica does not expire keys on its own; it waits to be told. Without this
+// an expired key is dropped on the master and lives on everywhere else, so the
+// hook is what lets the server propagate the DEL. It is always called after the
+// shard lock is released: replication takes its own lock and then acquires
+// shard locks to build a snapshot, so calling out while holding a shard lock
+// would invert that order.
+func (db *ShardedDB) SetExpiredCallback(fn func(key string)) {
+	db.onExpired.Store(&fn)
+}
+
+// notifyExpired reports a reclaimed key. The caller must not hold a shard lock.
+func (db *ShardedDB) notifyExpired(keys ...string) {
+	if len(keys) == 0 {
+		return
+	}
+	atomic.AddInt64(&db.expiredKeys, int64(len(keys)))
+	fn := db.onExpired.Load()
+	if fn == nil || *fn == nil {
+		return
+	}
+	for _, k := range keys {
+		(*fn)(k)
+	}
+}
+
+// ExpiredKeys returns how many keys have been reclaimed by expiry.
+func (db *ShardedDB) ExpiredKeys() int64 {
+	return atomic.LoadInt64(&db.expiredKeys)
+}
+
 // SetActiveExpire enables or disables the background expiry cycle. Tests use it
 // to observe keys that are logically expired but not yet reclaimed; lazy
 // expiration on read still applies either way.
@@ -521,4 +561,3 @@ func (db *ShardedDB) Len() int64 {
 	}
 	return count
 }
-

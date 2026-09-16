@@ -3,9 +3,7 @@ package commands
 import (
 	"bytes"
 	"fmt"
-	"strconv"
 	"strings"
-	"time"
 
 	"github.com/gosuda/gopherdis/acl"
 	"github.com/gosuda/gopherdis/cluster"
@@ -249,11 +247,19 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 			if ctx.DB != nil && len(argv) >= 2 {
 				ctx.DB.Touch(string(argv[1]))
 			}
-			if ctx.AOF != nil {
-				feedCommand(ctx.AOF, cmd.Name, argv, reply)
-			}
-			if ctx.Replication != nil {
-				ctx.Replication.FeedCommand(argv)
+			// Both sinks get the same normalized form. Feeding the raw argv to
+			// replicas while rewriting only the AOF would let the two diverge,
+			// and a relative TTL replayed later resolves to a later deadline
+			// than the one the master applied.
+			if ctx.AOF != nil || ctx.Replication != nil {
+				if out := normalizeForPropagation(cmd.Name, argv, reply); out != nil {
+					if ctx.AOF != nil {
+						ctx.AOF.Feed(out)
+					}
+					if ctx.Replication != nil {
+						ctx.Replication.FeedCommand(out)
+					}
+				}
 			}
 		}
 	}
@@ -263,51 +269,6 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 
 func Queued() []byte {
 	return []byte("+QUEUED\r\n")
-}
-
-// feedCommand handles fast-path zero-copy feeding and slow-path command normalization (e.g., EXPIRE -> PEXPIREAT).
-func feedCommand(aof AOFFeeder, cmdName string, argv [][]byte, reply []byte) {
-	switch cmdName {
-	case "expire":
-		if bytes.Equal(reply, []byte(":1\r\n")) && len(argv) >= 3 {
-			if secs, err := strconv.ParseInt(string(argv[2]), 10, 64); err == nil {
-				absMs := time.Now().UnixMilli() + secs*1000
-				aof.Feed([][]byte{
-					[]byte("PEXPIREAT"),
-					argv[1],
-					[]byte(strconv.FormatInt(absMs, 10)),
-				})
-				return
-			}
-		}
-	case "pexpire":
-		if bytes.Equal(reply, []byte(":1\r\n")) && len(argv) >= 3 {
-			if ms, err := strconv.ParseInt(string(argv[2]), 10, 64); err == nil {
-				absMs := time.Now().UnixMilli() + ms
-				aof.Feed([][]byte{
-					[]byte("PEXPIREAT"),
-					argv[1],
-					[]byte(strconv.FormatInt(absMs, 10)),
-				})
-				return
-			}
-		}
-	case "expireat":
-		if bytes.Equal(reply, []byte(":1\r\n")) && len(argv) >= 3 {
-			if unixSec, err := strconv.ParseInt(string(argv[2]), 10, 64); err == nil {
-				absMs := unixSec * 1000
-				aof.Feed([][]byte{
-					[]byte("PEXPIREAT"),
-					argv[1],
-					[]byte(strconv.FormatInt(absMs, 10)),
-				})
-				return
-			}
-		}
-	default:
-		// Fast-path: Zero-copy, zero-allocation pass through
-		aof.Feed(argv)
-	}
 }
 
 // Global default table containing all standard commands.

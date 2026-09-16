@@ -287,6 +287,9 @@ func infoCommand(ctx *Context, argv [][]byte) []byte {
 
 	if section == "all" || section == "stats" || section == "default" {
 		sb.WriteString("# Stats\r\n")
+		if ctx != nil && ctx.DB != nil {
+			sb.WriteString(fmt.Sprintf("expired_keys:%d\r\n", ctx.DB.ExpiredKeys()))
+		}
 		sb.WriteString("total_connections_received:1\r\n")
 		sb.WriteString("total_commands_processed:1\r\n")
 		sb.WriteString("instantaneous_ops_per_sec:0\r\n")

@@ -59,12 +59,31 @@ func (s *Server) EnableAOF(path string, policy aof.FsyncPolicy) error {
 	}
 	s.aof = a
 	s.AOF = a
+	s.wireExpiryPropagation()
 	return nil
+}
+
+// wireExpiryPropagation makes an expired key reach the AOF and any replicas as
+// an explicit DEL.
+//
+// A replica never expires keys on its own; it waits to be told, so without this
+// a key dropped on the master lives on everywhere else until that replica is
+// promoted and starts answering with data the master had already discarded.
+func (s *Server) wireExpiryPropagation() {
+	s.DB.SetExpiredCallback(func(key string) {
+		argv := [][]byte{[]byte("DEL"), []byte(key)}
+		if s.AOF != nil {
+			_ = s.AOF.Feed(argv)
+		}
+		if s.Replication != nil {
+			s.Replication.FeedCommand(argv)
+		}
+	})
 }
 
 func NewServer() *Server {
 	database := db.NewShardedDB()
-	return &Server{
+	srv := &Server{
 		DB:          database,
 		Commands:    commands.DefaultTable,
 		PubSub:      pubsub.NewShardedHub(),
@@ -74,6 +93,8 @@ func NewServer() *Server {
 		Cluster:     cluster.NewClusterManager("node_local", "127.0.0.1:6379"),
 		arenaPool:   pure.NewPool(4096),
 	}
+	srv.wireExpiryPropagation()
+	return srv
 }
 
 func (s *Server) GetDB() *db.ShardedDB {

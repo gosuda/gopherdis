@@ -71,6 +71,7 @@ func (db *ShardedDB) ActiveExpireCycle() int {
 			// Sample keys
 			sampled := 0
 			expired := 0
+			var reclaimed []string
 			for k, exp := range s.expires {
 				sampled++
 				if exp > 0 && now >= exp {
@@ -79,6 +80,8 @@ func (db *ShardedDB) ActiveExpireCycle() int {
 					}
 					delete(s.entries, k)
 					delete(s.expires, k)
+					s.bumpVersion(db, k)
+					reclaimed = append(reclaimed, k)
 					expired++
 					totalDeleted++
 				}
@@ -87,6 +90,10 @@ func (db *ShardedDB) ActiveExpireCycle() int {
 				}
 			}
 			s.Unlock()
+
+			// Outside the shard lock: the hook reaches replication, which takes
+			// its own lock and then shard locks of its own.
+			db.notifyExpired(reclaimed...)
 
 			// If less than 25% were expired, move to next shard
 			if sampleSize == 0 || (expired*100)/sampleSize < 25 {

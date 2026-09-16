@@ -126,6 +126,11 @@ func (m *Manager) FeedCommand(argv [][]byte) {
 	}
 }
 
+// selectPreamble is the SELECT every replication stream opens with. A replica
+// applies the stream against whatever database it last selected, so the stream
+// has to state which one it targets before the first write.
+var selectPreamble = []byte("*2\r\n$6\r\nSELECT\r\n$1\r\n0\r\n")
+
 // newSessionLocked allocates a replica session. Caller must hold m.mu.
 func (m *Manager) newSessionLocked() *ReplicaSession {
 	id := atomic.AddUint64(&m.nextReplicaID, 1)
@@ -134,6 +139,9 @@ func (m *Manager) newSessionLocked() *ReplicaSession {
 		MsgCh: make(chan []byte, 1024),
 		Done:  make(chan struct{}),
 	}
+	// Seeded rather than sent on the first write, so a replica that connects and
+	// receives nothing still knows which database the stream belongs to.
+	session.MsgCh <- selectPreamble
 	m.replicas[id] = session
 	return session
 }
