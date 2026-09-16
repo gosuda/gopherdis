@@ -41,9 +41,13 @@ of the following stops holding:
 - **Differential suite against real C Redis.** Every scenario in `tests/` is
   replayed against both a live `redis-server` and gopherdis, comparing the raw
   RESP bytes. A single divergent byte fails the build.
-- **Official Redis Tcl suite.** The units listed in the workflow matrix are run
-  from [redis/redis](https://github.com/redis/redis) unmodified and must pass
-  end to end. Currently verified: `unit/type/incr`, `unit/auth`.
+- **Official Redis Tcl suite.** The units in the workflow matrix are run
+  unmodified from [redis/redis](https://github.com/redis/redis), pinned to a
+  release tag rather than `unstable`, and must pass end to end. Each is also
+  required to have executed a non-zero number of tests, because a unit whose
+  tags exclude it in external-server mode runs nothing and still reports
+  success. Currently verified against 8.10.1: `unit/type/incr` (33 tests) and
+  `unit/networking` (1 test).
 - **Race detector.** `go test -race ./...` across every package.
 
 Units outside that matrix are not claimed to pass. Gopherdis exposes a single
