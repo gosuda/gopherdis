@@ -46,15 +46,22 @@ of the following stops holding:
   release tag rather than `unstable`, and must pass end to end. Each is also
   required to have executed a non-zero number of tests, because a unit whose
   tags exclude it in external-server mode runs nothing and still reports
-  success. Currently verified against 8.10.1: `unit/type/incr` (33 tests) and
-  `unit/networking` (1 test).
+  success. Currently verified against 8.10.1: `unit/type/incr` (33 tests),
+  `unit/networking` (1 test) and `unit/quit` (3 tests).
 - **Race detector.** `go test -race ./...` across every package.
 
 Units outside that matrix are not claimed to pass. Gopherdis exposes a single
-database, so the suite is run with `--singledb`, and commands including `KEYS`,
-`SCAN`, `SELECT`, `DUMP`/`RESTORE` and `LPOS` are missing, while `FUNCTION`
-answers only as an engine with nothing loaded. Extending the matrix is how
-compatibility progress gets recorded here.
+database, so the suite is run with `--singledb` and `SELECT` accepts index 0
+only. `DUMP`/`RESTORE` and `BITFIELD` are still missing, and `FUNCTION` answers
+only as an engine with nothing loaded.
+
+The type units are currently blocked on encoding fidelity rather than on
+missing commands: each runs every test once per encoding and asserts
+`OBJECT ENCODING`, so `listpack`, `intset` and the conversion thresholds have to
+exist for real before they can pass. Reporting those encoding names without the
+representations behind them would turn the suite green without the property
+being true, so they are not reported. Extending the matrix is how compatibility
+progress gets recorded here.
 
 ## How fast is it?
 
