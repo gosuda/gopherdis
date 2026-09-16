@@ -573,3 +573,91 @@ func TestSetAlgebraAcrossEncodings(t *testing.T) {
 		t.Errorf("SMOVE did not land: %q", got)
 	}
 }
+
+func TestZsetEncodingTransitions(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "z", "3", "c", "1", "a", "2", "b")
+
+	if got := run(t, ctx, "OBJECT", "ENCODING", "z"); !strings.Contains(got, "listpack") {
+		t.Fatalf("a small sorted set should be listpack, got %q", got)
+	}
+	// The listpack is kept in score order, so rank queries work without a
+	// skiplist behind them.
+	if got := run(t, ctx, "ZRANGE", "z", "0", "-1"); !strings.Contains(got, "a\r\n$1\r\nb\r\n$1\r\nc") {
+		t.Errorf("listpack ordering wrong: %q", got)
+	}
+	if got := run(t, ctx, "ZRANK", "z", "b"); got != ":1\r\n" {
+		t.Errorf("ZRANK on a listpack = %q, want :1", got)
+	}
+	// Re-scoring has to move the member, not just edit it in place.
+	run(t, ctx, "ZADD", "z", "99", "a")
+	if got := run(t, ctx, "ZRANK", "z", "a"); got != ":2\r\n" {
+		t.Errorf("after re-scoring, ZRANK a = %q, want :2", got)
+	}
+
+	// Crossing the threshold promotes to skiplist with ranks intact.
+	for i := 0; i < 200; i++ {
+		run(t, ctx, "ZADD", "big", itoa(i), "m"+itoa(i))
+	}
+	if got := run(t, ctx, "OBJECT", "ENCODING", "big"); !strings.Contains(got, "skiplist") {
+		t.Fatalf("a large sorted set should be skiplist, got %q", got)
+	}
+	if got := run(t, ctx, "ZCARD", "big"); got != ":200\r\n" {
+		t.Errorf("promotion lost members: %q", got)
+	}
+	if got := run(t, ctx, "ZRANK", "big", "m5"); got != ":5\r\n" {
+		t.Errorf("ZRANK after promotion = %q, want :5", got)
+	}
+
+	run(t, ctx, "ZADD", "long", "1", strings.Repeat("x", 100))
+	if got := run(t, ctx, "OBJECT", "ENCODING", "long"); !strings.Contains(got, "skiplist") {
+		t.Errorf("an oversized member should force skiplist, got %q", got)
+	}
+}
+
+func TestZaddOptionsAndNaN(t *testing.T) {
+	ctx := newCtx()
+
+	// NaN is rejected rather than stored.
+	if got := run(t, ctx, "ZADD", "z", "nan", "m"); !strings.Contains(got, "not a valid float") {
+		t.Errorf("ZADD nan = %q, want a float error", got)
+	}
+	if got := run(t, ctx, "EXISTS", "z"); got != ":0\r\n" {
+		t.Errorf("a rejected ZADD must not create the key")
+	}
+	run(t, ctx, "ZADD", "z", "1", "m")
+	if got := run(t, ctx, "ZINCRBY", "z", "nan", "m"); !strings.Contains(got, "not a valid float") {
+		t.Errorf("ZINCRBY nan = %q", got)
+	}
+
+	// NX only adds, XX only updates.
+	if got := run(t, ctx, "ZADD", "z", "NX", "5", "m"); got != ":0\r\n" {
+		t.Errorf("ZADD NX on an existing member = %q", got)
+	}
+	if got := run(t, ctx, "ZSCORE", "z", "m"); !strings.Contains(got, "1") {
+		t.Errorf("ZADD NX changed the score: %q", got)
+	}
+	if got := run(t, ctx, "ZADD", "z", "XX", "5", "absent"); got != ":0\r\n" {
+		t.Errorf("ZADD XX on a missing member = %q", got)
+	}
+	if got := run(t, ctx, "ZADD", "z", "CH", "7", "m"); got != ":1\r\n" {
+		t.Errorf("ZADD CH should count the update, got %q", got)
+	}
+
+	// GT and LT only move the score in one direction.
+	run(t, ctx, "ZADD", "z", "GT", "3", "m")
+	if got := run(t, ctx, "ZSCORE", "z", "m"); !strings.Contains(got, "7") {
+		t.Errorf("GT lowered the score: %q", got)
+	}
+	run(t, ctx, "ZADD", "z", "GT", "9", "m")
+	if got := run(t, ctx, "ZSCORE", "z", "m"); !strings.Contains(got, "9") {
+		t.Errorf("GT did not raise the score: %q", got)
+	}
+
+	if got := run(t, ctx, "ZADD", "z", "INCR", "1", "m"); !strings.Contains(got, "10") {
+		t.Errorf("ZADD INCR = %q, want 10", got)
+	}
+	if got := run(t, ctx, "ZADD", "z", "NX", "XX", "1", "m"); !strings.Contains(got, "not compatible") {
+		t.Errorf("NX with XX should be rejected, got %q", got)
+	}
+}

@@ -2,11 +2,11 @@ package commands
 
 import (
 	"bytes"
-	"fmt"
+	"math"
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -74,70 +74,150 @@ func init() {
 }
 
 // getZSetForRead resolves key to its sorted set without ever storing anything.
-// A missing key yields a detached empty ZSet so that read-only callers can share
-// the normal code path; read commands must never materialise a phantom key.
-func getZSetForRead(ctx *Context, key string) (*skiplist.ZSet, []byte) {
+// A missing key yields a detached empty view so that read-only callers can
+// share the normal code path; read commands must never materialise a key.
+func getZSetForRead(ctx *Context, key string) (*zsetView, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		return skiplist.NewZSet(), nil
+		return emptyZsetView(), nil
 	}
 	if obj.Type != object.OBJ_ZSET {
 		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return nil, Error("internal zset type error")
-	}
-	return zs, nil
+	return newZsetView(ctx, key, obj)
 }
 
-func getOrCreateZSet(ctx *Context, key string) (*skiplist.ZSet, bool, []byte) {
+func getOrCreateZSet(ctx *Context, key string) (*zsetView, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		zs := skiplist.NewZSet()
-		ctx.DB.Set(key, &object.Robj{
+		// New sorted sets start compact, as Redis does.
+		lp := listpack.New()
+		newObj := &object.Robj{
 			Type:     object.OBJ_ZSET,
-			Encoding: object.OBJ_ENCODING_SKIPLIST,
-			Ptr:      zs,
-		})
-		return zs, true, nil
+			Encoding: object.OBJ_ENCODING_LISTPACK,
+			Ptr:      lp,
+		}
+		ctx.DB.Set(key, newObj)
+		return &zsetView{ctx: ctx, key: key, obj: newObj, lp: lp}, true, nil
 	}
 	if obj.Type != object.OBJ_ZSET {
 		return nil, false, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return nil, false, Error("ERR internal zset type error")
+	z, errReply := newZsetView(ctx, key, obj)
+	if errReply != nil {
+		return nil, false, errReply
 	}
-	return zs, false, nil
+	return z, false, nil
 }
 
 func zaddCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	pairs := argv[2:]
-	if len(pairs)%2 != 0 {
+
+	var nx, xx, gt, lt, ch, incr bool
+	idx := 2
+	for ; idx < len(argv); idx++ {
+		switch strings.ToUpper(string(argv[idx])) {
+		case "NX":
+			nx = true
+		case "XX":
+			xx = true
+		case "GT":
+			gt = true
+		case "LT":
+			lt = true
+		case "CH":
+			ch = true
+		case "INCR":
+			incr = true
+		default:
+			goto parsed
+		}
+	}
+parsed:
+
+	if nx && xx {
+		return Error("XX and NX options at the same time are not compatible")
+	}
+	if nx && (gt || lt) {
+		return Error("GT, LT, and/or NX options at the same time are not compatible")
+	}
+	if gt && lt {
+		return Error("GT, LT, and/or NX options at the same time are not compatible")
+	}
+
+	pairs := argv[idx:]
+	if len(pairs) == 0 || len(pairs)%2 != 0 {
 		return Error("syntax error")
+	}
+	if incr && len(pairs) != 2 {
+		return Error("INCR option supports a single increment-element pair")
+	}
+
+	// Parse every score before touching the set: ZADD is all or nothing on a
+	// malformed argument.
+	scores := make([]float64, len(pairs)/2)
+	for i := 0; i < len(pairs); i += 2 {
+		score, err := strconv.ParseFloat(string(pairs[i]), 64)
+		if err != nil || math.IsNaN(score) {
+			return Error("value is not a valid float")
+		}
+		scores[i/2] = score
 	}
 
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, created, errReply := getOrCreateZSet(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
 
-	addedCount := int64(0)
+	var addedCount, changedCount int64
 	for i := 0; i < len(pairs); i += 2 {
-		score, err := strconv.ParseFloat(string(pairs[i]), 64)
-		if err != nil {
-			return Error("value is not a valid float")
-		}
+		score := scores[i/2]
 		member := string(pairs[i+1])
-		added, _ := zs.Add(member, score)
+
+		cur, exists := zs.Score(member)
+		if (nx && exists) || (xx && !exists) {
+			continue
+		}
+		if incr {
+			if exists {
+				score += cur
+				if math.IsNaN(score) {
+					return Error("resulting score is not a number (NaN)")
+				}
+			}
+		}
+		if exists && ((gt && score <= cur) || (lt && score >= cur)) {
+			continue
+		}
+
+		added, updated := zs.Add(member, score)
 		if added {
 			addedCount++
 		}
+		if added || updated {
+			changedCount++
+		}
+		if incr {
+			return BulkString([]byte(formatFloat(score)))
+		}
+	}
+
+	// INCR with a skipped element replies with a nil, not a count.
+	if incr {
+		if created && zs.Len() == 0 {
+			ctx.DB.Del(key)
+		}
+		return NullBulkString()
+	}
+	if created && zs.Len() == 0 {
+		// XX against a key that did not exist must not leave one behind.
+		ctx.DB.Del(key)
+	}
+	if ch {
+		return Integer(changedCount)
 	}
 	return Integer(addedCount)
 }
@@ -146,16 +226,9 @@ func zscoreCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	member := string(argv[2])
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 
 	score, ok := zs.Score(member)
@@ -175,16 +248,9 @@ func zrevrankCommand(ctx *Context, argv [][]byte) []byte {
 
 func zrankGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 	key := string(argv[1])
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 
 	rank, found := zs.Rank(string(argv[2]), reverse)
@@ -222,16 +288,9 @@ func zrangeGeneric(ctx *Context, argv [][]byte, defaultRev bool) []byte {
 		}
 	}
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return []byte("*0\r\n")
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 
 	items := zs.Range(start, stop, reverse)
@@ -271,16 +330,9 @@ func zrangeGeneric(ctx *Context, argv [][]byte, defaultRev bool) []byte {
 
 func zcardCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return Integer(0)
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 	return Integer(zs.Len())
 }
@@ -291,16 +343,9 @@ func zremCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return Integer(0)
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 
 	deleted := int64(0)
@@ -319,7 +364,7 @@ func zremCommand(ctx *Context, argv [][]byte) []byte {
 func zincrbyCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	delta, err := strconv.ParseFloat(string(argv[2]), 64)
-	if err != nil {
+	if err != nil || math.IsNaN(delta) {
 		return Error("value is not a valid float")
 	}
 	member := string(argv[3])
@@ -335,9 +380,12 @@ func zincrbyCommand(ctx *Context, argv [][]byte) []byte {
 	// Score -> Add is a read-modify-write and needs the key lock, same as INCR.
 	currentScore, _ := zs.Score(member)
 	newScore := currentScore + delta
+	if math.IsNaN(newScore) {
+		return Error("resulting score is not a number (NaN)")
+	}
 	zs.Add(member, newScore)
 
-	return BulkString([]byte(fmt.Sprintf("%g", newScore)))
+	return BulkString([]byte(formatFloat(newScore)))
 }
 
 func zcountCommand(ctx *Context, argv [][]byte) []byte {
@@ -351,16 +399,9 @@ func zcountCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("min or max is not a float")
 	}
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return Integer(0)
-	}
-	if obj.Type != object.OBJ_ZSET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	zs, ok := obj.Ptr.(*skiplist.ZSet)
-	if !ok {
-		return Error("ERR internal zset type error")
+	zs, errReply := getZSetForRead(ctx, key)
+	if errReply != nil {
+		return errReply
 	}
 
 	items := zs.Range(0, -1, false)

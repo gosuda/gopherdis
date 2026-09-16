@@ -285,6 +285,28 @@ func (enc *Encoder) WriteEntry(entry db.DBEntry) error {
 		}
 
 	case object.OBJ_ZSET:
+		if lp, ok := obj.Ptr.(*listpack.Listpack); ok && lp != nil {
+			if err := enc.writeByte(TypeZSet); err != nil {
+				return err
+			}
+			if err := enc.WriteString(key); err != nil {
+				return err
+			}
+			if err := enc.WriteLen(uint64(lp.Len() / 2)); err != nil {
+				return err
+			}
+			// The listpack stores member then score; the RDB zset layout is the
+			// same pair order.
+			var encodeErr error
+			lp.ForEach(func(_ int, v []byte) bool {
+				if err := enc.WriteString(v); err != nil {
+					encodeErr = err
+					return false
+				}
+				return true
+			})
+			return encodeErr
+		}
 		zs, ok := obj.Ptr.(*skiplist.ZSet)
 		if !ok || zs == nil {
 			return nil

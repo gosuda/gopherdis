@@ -130,6 +130,17 @@ func writeEntryToRESP(w io.Writer, entry db.DBEntry) error {
 		}
 
 	case object.OBJ_ZSET:
+		if lp, ok := obj.Ptr.(*listpack.Listpack); ok && lp != nil && lp.Len() > 0 {
+			all := lp.All()
+			argv := make([][]byte, 0, len(all)+2)
+			argv = append(argv, []byte("ZADD"), []byte(key))
+			// ZADD takes score before member; the listpack holds the reverse.
+			for i := 0; i+1 < len(all); i += 2 {
+				argv = append(argv, all[i+1], all[i])
+			}
+			cmds = append(cmds, argv)
+			break
+		}
 		zs, ok := obj.Ptr.(*skiplist.ZSet)
 		if ok && zs != nil {
 			elements := zs.Range(0, -1, false)
