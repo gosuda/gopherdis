@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"math"
 	"strconv"
+	"strings"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
 	"github.com/gosuda/gopherdis/object"
@@ -76,6 +77,46 @@ func init() {
 		Arity:   4,
 		Flags:   FlagFast | FlagWrite,
 	})
+	DefaultTable.Register(&Command{
+		Name:    "hincrbyfloat",
+		Handler: hincrbyfloatCommand,
+		Arity:   4,
+		Flags:   FlagFast | FlagWrite,
+	})
+}
+
+func hincrbyfloatCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+	field := string(argv[2])
+	delta, err := strconv.ParseFloat(string(argv[3]), 64)
+	if err != nil || math.IsNaN(delta) || math.IsInf(delta, 0) {
+		return Error("value is not a valid float")
+	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	d, _, errReply := getOrCreateHash(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+
+	var curVal float64
+	if existing, exists := d.Get(field); exists {
+		curVal, err = strconv.ParseFloat(strings.TrimSpace(string(existing)), 64)
+		if err != nil {
+			return Error("hash value is not a float")
+		}
+	}
+
+	newVal := curVal + delta
+	if math.IsNaN(newVal) || math.IsInf(newVal, 0) {
+		return Error("increment would produce NaN or Infinity")
+	}
+
+	formatted := formatFloat(newVal)
+	d.Set(field, []byte(formatted))
+	return BulkString([]byte(formatted))
 }
 
 func getOrCreateHash(ctx *Context, key string) (*dict.Dict, bool, []byte) {

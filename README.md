@@ -5,8 +5,7 @@
 **A Redis-compatible in-memory store in pure Go that outperforms C Redis by up to 2.5x on multi-core hardware**
 
 [![Go Version](https://img.shields.io/badge/Go-1.24%2B-00ADD8?style=flat&logo=go)](https://golang.org)
-[![Compatibility](https://img.shields.io/badge/Redis%20Compatibility-100%25%20(RESP2%20%26%20RESP3)-E10098?style=flat&logo=redis)](https://redis.io)
-[![CI Tests](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml/badge.svg)](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml)
+[![Redis Compatibility](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml/badge.svg?branch=main)](https://github.com/gosuda/gopherdis/actions/workflows/redis-compatibility.yml)
 [![License](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Zero CGo](https://img.shields.io/badge/CGo-Zero%20(Pure%20Go)-success)](#)
 
@@ -24,7 +23,7 @@ It is designed for deployments where Redis-compatible semantics are required but
 
 ## Why does it exist?
 
-Official C Redis executes all commands on one thread, so throughput is capped by single-core performance regardless of how many cores the machine has. Gopherdis removes that ceiling while keeping full protocol compatibility and strict concurrency safety:
+Official C Redis executes all commands on one thread, so throughput is capped by single-core performance regardless of how many cores the machine has. Gopherdis removes that ceiling while keeping RESP protocol compatibility and strict concurrency safety:
 
 - **64-shard architecture with transaction isolation**: The keyspace is partitioned across 64 independent database shards, allowing concurrent execution across CPU cores while preserving ACID-like transaction guarantees (`MULTI`/`EXEC`) and atomic script isolation.
 - **Zero-allocation stream engine**: Streams use 8KB fixed chunk slabs from an unmanaged memory arena (`beaver/pure.Pool`), so `XADD`/`XRANGE` bypass Go heap allocations and avoid GC scan pauses that destabilize tail latency.
@@ -32,13 +31,34 @@ Official C Redis executes all commands on one thread, so throughput is capped by
 - **Bytecode-cached Lua engine**: Scripts are compiled into bytecode prototypes (`*lua.FunctionProto`) and executed concurrently on an elastic pool of isolated Lua VMs with transaction-safe state isolation.
 - **Predictive clustering**: Standard 16,384 CRC16 hash slots with `-MOVED` redirection, plus a topology graph, an EWMA anomaly predictor that detects node exhaustion before failure, and shadow-master pre-provisioning for zero-downtime handover with epoch fencing tokens.
 
+## What compatibility is verified?
+
+The badge above is the compatibility claim, and it is driven entirely by
+[the workflow](.github/workflows/redis-compatibility.yml). Nothing in that
+workflow is allowed to swallow a failure, so the badge goes red the moment any
+of the following stops holding:
+
+- **Differential suite against real C Redis.** Every scenario in `tests/` is
+  replayed against both a live `redis-server` and gopherdis, comparing the raw
+  RESP bytes. A single divergent byte fails the build.
+- **Official Redis Tcl suite.** The units listed in the workflow matrix are run
+  from [redis/redis](https://github.com/redis/redis) unmodified and must pass
+  end to end. Currently verified: `unit/type/incr`, `unit/auth`.
+- **Race detector.** `go test -race ./...` across every package.
+
+Units outside that matrix are not claimed to pass. Gopherdis exposes a single
+database, so the suite is run with `--singledb`, and commands including `KEYS`,
+`SCAN`, `SELECT`, `DUMP`/`RESTORE` and `LPOS` are missing, while `FUNCTION`
+answers only as an engine with nothing loaded. Extending the matrix is how
+compatibility progress gets recorded here.
+
 ## How fast is it?
 
 Measured on identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Gopherdis delivers **1.2x to 2.5x higher throughput** than C Redis 8.0 across workloads, from synthetic microbenchmarks to a 2M-key real-world cache load.
 
-![C Redis 8.0 vs Gopherdis Standard Benchmark](benchmark_chart.svg?v=5)
+![C Redis 8.0 vs Gopherdis Standard Benchmark](benchmark_chart.svg?v=6)
 
-![C Redis 8.0 vs Gopherdis SIMD Benchmark](benchmark_chart_simd.svg?v=5)
+![C Redis 8.0 vs Gopherdis SIMD Benchmark](benchmark_chart_simd.svg?v=6)
 
 ### Benchmark Summary
 

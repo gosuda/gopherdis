@@ -81,7 +81,6 @@ func CreateZsetObject() *Robj {
 	}
 }
 
-
 // String returns a string representation of the object's payload.
 func (o *Robj) String() string {
 	if o == nil || o.Ptr == nil {
@@ -224,4 +223,41 @@ func (o *Robj) EncodingName() string {
 	default:
 		return "unknown"
 	}
+}
+
+// embstrSizeLimit is the length below which Redis stores a string with the
+// embstr encoding rather than raw.
+const embstrSizeLimit = 44
+
+// TryEncodeString builds a string object using the encoding Redis would pick:
+// int when the value round-trips exactly as an int64, embstr when it is short,
+// raw otherwise.
+//
+// This is what makes OBJECT ENCODING agree with Redis after "SET k 123", and it
+// also drops the backing byte slice for integer values.
+func TryEncodeString(val []byte) *Robj {
+	if n, ok := parseExactInt64(val); ok {
+		return CreateStringObjectFromLongLong(n)
+	}
+	if len(val) <= embstrSizeLimit {
+		return &Robj{Type: OBJ_STRING, Encoding: OBJ_ENCODING_EMBSTR, Ptr: string(val)}
+	}
+	return CreateRawStringObject(val)
+}
+
+// parseExactInt64 reports whether val is the canonical decimal form of an
+// int64. Values such as "012", "+1" or " 1" parse as numbers but do not render
+// back identically, and Redis keeps those as strings.
+func parseExactInt64(val []byte) (int64, bool) {
+	if len(val) == 0 || len(val) > 20 {
+		return 0, false
+	}
+	n, err := strconv.ParseInt(string(val), 10, 64)
+	if err != nil {
+		return 0, false
+	}
+	if strconv.FormatInt(n, 10) != string(val) {
+		return 0, false
+	}
+	return n, true
 }

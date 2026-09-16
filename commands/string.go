@@ -9,6 +9,8 @@ import (
 	"github.com/gosuda/gopherdis/object"
 )
 
+// maxStringLength mirrors Redis' proto-max-bulk-len ceiling for a string value.
+const maxStringLength = 512 * 1024 * 1024
 
 func init() {
 	DefaultTable.Register(&Command{
@@ -71,6 +73,159 @@ func init() {
 		Arity:   3,
 		Flags:   FlagWrite,
 	})
+	DefaultTable.Register(&Command{
+		Name:    "incrbyfloat",
+		Handler: incrbyfloatCommand,
+		Arity:   3,
+		Flags:   FlagFast | FlagWrite,
+	})
+	DefaultTable.Register(&Command{
+		Name:    "setrange",
+		Handler: setrangeCommand,
+		Arity:   4,
+		Flags:   FlagWrite,
+	})
+	DefaultTable.Register(&Command{
+		Name:    "getrange",
+		Handler: getrangeCommand,
+		Arity:   4,
+		Flags:   FlagReadOnly,
+	})
+}
+
+func setrangeCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+	offset, err := strconv.Atoi(string(argv[2]))
+	if err != nil {
+		return Error("value is not an integer or out of range")
+	}
+	if offset < 0 {
+		return Error("offset is out of range")
+	}
+	value := argv[3]
+	if offset+len(value) > maxStringLength {
+		return Error("string exceeds maximum allowed size (proto-max-bulk-len)")
+	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	obj, ok := ctx.DB.Get(key)
+	var cur []byte
+	if ok && obj != nil {
+		if obj.Type != object.OBJ_STRING {
+			return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		cur = obj.Bytes()
+	} else if len(value) == 0 {
+		// Setting an empty range on a missing key must not create it.
+		return Integer(0)
+	}
+
+	if len(value) == 0 {
+		return Integer(int64(len(cur)))
+	}
+
+	newLen := len(cur)
+	if offset+len(value) > newLen {
+		newLen = offset + len(value)
+	}
+	buf := make([]byte, newLen) // zero-filled, which is the padding Redis uses
+	copy(buf, cur)
+	copy(buf[offset:], value)
+
+	ctx.DB.Set(key, object.CreateObject(object.OBJ_STRING, buf))
+	return Integer(int64(len(buf)))
+}
+
+func getrangeCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+	start, err1 := strconv.Atoi(string(argv[2]))
+	end, err2 := strconv.Atoi(string(argv[3]))
+	if err1 != nil || err2 != nil {
+		return Error("value is not an integer or out of range")
+	}
+
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return BulkString(nil)
+	}
+	if obj.Type != object.OBJ_STRING {
+		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+
+	b := obj.Bytes()
+	n := len(b)
+	if n == 0 {
+		return BulkString(nil)
+	}
+	if start < 0 {
+		start += n
+	}
+	if end < 0 {
+		end += n
+	}
+	if start < 0 {
+		start = 0
+	}
+	if end < 0 {
+		end = 0
+	}
+	if end >= n {
+		end = n - 1
+	}
+	if start > end || start >= n {
+		return BulkString(nil)
+	}
+	return BulkString(b[start : end+1])
+}
+
+// formatFloat renders a float the way Redis does: plain decimal notation with
+// no exponent and no trailing zeros.
+func formatFloat(f float64) string {
+	s := strconv.FormatFloat(f, 'f', -1, 64)
+	if strings.Contains(s, ".") {
+		s = strings.TrimRight(s, "0")
+		s = strings.TrimSuffix(s, ".")
+	}
+	return s
+}
+
+func incrbyfloatCommand(ctx *Context, argv [][]byte) []byte {
+	key := string(argv[1])
+	delta, err := strconv.ParseFloat(string(argv[2]), 64)
+	if err != nil || math.IsNaN(delta) {
+		return Error("value is not a valid float")
+	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	var current float64
+	obj, ok := ctx.DB.Get(key)
+	if ok && obj != nil {
+		if obj.Type != object.OBJ_STRING {
+			return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+		}
+		// Reject the forms ParseFloat accepts but Redis does not.
+		raw := strings.TrimSpace(string(obj.Bytes()))
+		if raw != string(obj.Bytes()) {
+			return Error("value is not a valid float")
+		}
+		current, err = strconv.ParseFloat(raw, 64)
+		if err != nil {
+			return Error("value is not a valid float")
+		}
+	}
+
+	newVal := current + delta
+	if math.IsNaN(newVal) || math.IsInf(newVal, 0) {
+		return Error("increment would produce NaN or Infinity")
+	}
+
+	formatted := formatFloat(newVal)
+	ctx.DB.Set(key, object.CreateStringObject(formatted))
+	return BulkString([]byte(formatted))
 }
 
 func getCommand(ctx *Context, argv [][]byte) []byte {
@@ -87,7 +242,7 @@ func getCommand(ctx *Context, argv [][]byte) []byte {
 
 func setCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	val := object.CreateRawStringObject(argv[2])
+	val := object.TryEncodeString(argv[2])
 
 	var ttl time.Duration
 	var hasTTL bool
@@ -152,7 +307,7 @@ func msetCommand(ctx *Context, argv [][]byte) []byte {
 
 	for i := 0; i < len(pairs); i += 2 {
 		key := string(pairs[i])
-		val := object.CreateRawStringObject(pairs[i+1])
+		val := object.TryEncodeString(pairs[i+1])
 		ctx.DB.Set(key, val)
 	}
 	return OK()

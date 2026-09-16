@@ -30,6 +30,35 @@ func init() {
 		Arity:   -2,
 		Flags:   FlagAdmin,
 	})
+	DefaultTable.Register(&Command{
+		Name:    "function",
+		Handler: functionCommand,
+		Arity:   -2,
+		Flags:   FlagAdmin,
+	})
+}
+
+// functionCommand answers the FUNCTION container for a server with no function
+// engine. The read-only subcommands report an empty library set, which is the
+// truthful answer here; LOAD and RESTORE report that the feature is absent
+// rather than pretending to succeed.
+func functionCommand(ctx *Context, argv [][]byte) []byte {
+	switch strings.ToUpper(string(argv[1])) {
+	case "FLUSH":
+		// Nothing is ever loaded, so flushing is a no-op rather than an error.
+		return OK()
+	case "LIST":
+		return Array(nil)
+	case "DUMP":
+		return BulkString(nil)
+	case "STATS":
+		// running_script (nil) + engines (empty map), as Redis reports when idle.
+		return []byte("*4\r\n$14\r\nrunning_script\r\n$-1\r\n$7\r\nengines\r\n*0\r\n")
+	case "LOAD", "RESTORE":
+		return Error("function engine is not supported")
+	default:
+		return Error(fmt.Sprintf("unknown subcommand '%s'", string(argv[1])))
+	}
 }
 
 func getScriptEngine(ctx *Context) *scripting.Engine {
