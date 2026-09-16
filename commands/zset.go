@@ -1,7 +1,6 @@
 package commands
 
 import (
-	"bytes"
 	"math"
 	"strconv"
 	"strings"
@@ -293,63 +292,25 @@ func zrevrangeCommand(ctx *Context, argv [][]byte) []byte {
 }
 
 func zrangeGeneric(ctx *Context, argv [][]byte, defaultRev bool) []byte {
-	key := string(argv[1])
-	start, err1 := strconv.ParseInt(string(argv[2]), 10, 64)
-	stop, err2 := strconv.ParseInt(string(argv[3]), 10, 64)
-	if err1 != nil || err2 != nil {
-		return Error("value is not an integer or out of range")
+	args := argv[1:]
+	if defaultRev {
+		// ZREVRANGE is ZRANGE ... REV, so express it that way and share the
+		// selection logic rather than keeping a second implementation.
+		args = append(append([][]byte{}, args...), []byte("REV"))
 	}
 
-	withScores := false
-	reverse := defaultRev
-
-	for i := 4; i < len(argv); i++ {
-		opt := strings.ToUpper(string(argv[i]))
-		if opt == "WITHSCORES" {
-			withScores = true
-		} else if opt == "REV" {
-			reverse = true
-		}
-	}
-
-	zs, errReply := getZSetForRead(ctx, key)
+	items, errReply := zrangeSelect(ctx, args)
 	if errReply != nil {
 		return errReply
 	}
 
-	items := zs.Range(start, stop, reverse)
-	if len(items) == 0 {
-		return []byte("*0\r\n")
-	}
-
-	totalCount := len(items)
-	if withScores {
-		totalCount *= 2
-	}
-
-	var buf bytes.Buffer
-	buf.Grow(totalCount * 32)
-	buf.WriteByte('*')
-	buf.Write(strconv.AppendInt(nil, int64(totalCount), 10))
-	buf.WriteString("\r\n")
-
-	for _, item := range items {
-		buf.WriteByte('$')
-		buf.Write(strconv.AppendInt(nil, int64(len(item.Member)), 10))
-		buf.WriteString("\r\n")
-		buf.WriteString(item.Member)
-		buf.WriteString("\r\n")
-
-		if withScores {
-			scoreBytes := strconv.AppendFloat(nil, item.Score, 'f', -1, 64)
-			buf.WriteByte('$')
-			buf.Write(strconv.AppendInt(nil, int64(len(scoreBytes)), 10))
-			buf.WriteString("\r\n")
-			buf.Write(scoreBytes)
-			buf.WriteString("\r\n")
+	withScores := false
+	for i := 4; i < len(argv); i++ {
+		if strings.EqualFold(string(argv[i]), "WITHSCORES") {
+			withScores = true
 		}
 	}
-	return buf.Bytes()
+	return zsetReply(items, withScores)
 }
 
 func zcardCommand(ctx *Context, argv [][]byte) []byte {
@@ -413,25 +374,22 @@ func zincrbyCommand(ctx *Context, argv [][]byte) []byte {
 }
 
 func zcountCommand(ctx *Context, argv [][]byte) []byte {
-	key := string(argv[1])
-	minScore, err := strconv.ParseFloat(string(argv[2]), 64)
-	if err != nil {
-		return Error("min or max is not a float")
-	}
-	maxScore, err := strconv.ParseFloat(string(argv[3]), 64)
-	if err != nil {
+	// ZCOUNT takes the same bound syntax as ZRANGEBYSCORE, so it has to accept
+	// the exclusive "(" prefix and the infinities rather than a bare float.
+	min, minEx, ok1 := scoreBound(string(argv[2]))
+	max, maxEx, ok2 := scoreBound(string(argv[3]))
+	if !ok1 || !ok2 {
 		return Error("min or max is not a float")
 	}
 
-	zs, errReply := getZSetForRead(ctx, key)
+	zs, errReply := getZSetForRead(ctx, string(argv[1]))
 	if errReply != nil {
 		return errReply
 	}
 
-	items := zs.Range(0, -1, false)
 	count := int64(0)
-	for _, item := range items {
-		if item.Score >= minScore && item.Score <= maxScore {
+	for _, item := range zs.elements() {
+		if inScoreRange(item.Score, min, max, minEx, maxEx) {
 			count++
 		}
 	}

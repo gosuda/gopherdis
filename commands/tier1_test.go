@@ -804,3 +804,93 @@ func TestDebugDigestValue(t *testing.T) {
 		t.Error("list digest ignored order")
 	}
 }
+
+func TestDumpRestoreRoundTrip(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "RPUSH", "src", "a", "b", "c")
+
+	dumped := run(t, ctx, "DUMP", "src")
+	if !strings.HasPrefix(dumped, "$") || strings.HasPrefix(dumped, "$-1") {
+		t.Fatalf("DUMP = %q", dumped)
+	}
+	// Pull the payload out of the bulk reply.
+	idx := strings.Index(dumped, "\r\n")
+	payload := dumped[idx+2 : len(dumped)-2]
+
+	argv := [][]byte{[]byte("RESTORE"), []byte("dst"), []byte("0"), []byte(payload)}
+	if got := string(DefaultTable.Execute(ctx, argv)); got != "+OK\r\n" {
+		t.Fatalf("RESTORE = %q", got)
+	}
+	if got := run(t, ctx, "LRANGE", "dst", "0", "-1"); !strings.Contains(got, "a\r\n$1\r\nb\r\n$1\r\nc") {
+		t.Errorf("restored list = %q", got)
+	}
+
+	// Restoring onto an existing key needs REPLACE.
+	if got := string(DefaultTable.Execute(ctx, argv)); !strings.HasPrefix(got, "-BUSYKEY") {
+		t.Errorf("RESTORE onto an existing key = %q, want BUSYKEY", got)
+	}
+	withReplace := append(append([][]byte{}, argv...), []byte("REPLACE"))
+	if got := string(DefaultTable.Execute(ctx, withReplace)); got != "+OK\r\n" {
+		t.Errorf("RESTORE REPLACE = %q", got)
+	}
+
+	// A corrupted payload is rejected rather than half applied.
+	bad := []byte(payload)
+	bad[len(bad)/2] ^= 0xff
+	corrupt := [][]byte{[]byte("RESTORE"), []byte("other"), []byte("0"), bad}
+	if got := string(DefaultTable.Execute(ctx, corrupt)); !strings.Contains(got, "checksum") {
+		t.Errorf("corrupted RESTORE = %q, want a checksum error", got)
+	}
+	if got := run(t, ctx, "EXISTS", "other"); got != ":0\r\n" {
+		t.Error("a rejected RESTORE must not create the key")
+	}
+	if got := run(t, ctx, "DUMP", "missing"); got != "$-1\r\n" {
+		t.Errorf("DUMP of a missing key = %q", got)
+	}
+}
+
+func TestZsetLexAndUnifiedRange(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "z", "0", "a", "0", "b", "0", "c", "0", "d")
+
+	if got := run(t, ctx, "ZRANGEBYLEX", "z", "[a", "[b"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("ZRANGEBYLEX inclusive = %q, want 2", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYLEX", "z", "(a", "[c"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("ZRANGEBYLEX exclusive min = %q, want 2", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYLEX", "z", "-", "+"); !strings.HasPrefix(got, "*4\r\n") {
+		t.Errorf("ZRANGEBYLEX full range = %q, want 4", got)
+	}
+	if got := run(t, ctx, "ZLEXCOUNT", "z", "-", "+"); got != ":4\r\n" {
+		t.Errorf("ZLEXCOUNT = %q", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYLEX", "z", "a", "b"); !strings.Contains(got, "not valid string range") {
+		t.Errorf("a bound without a bracket should be rejected, got %q", got)
+	}
+	if got := run(t, ctx, "ZREMRANGEBYLEX", "z", "[a", "[b"); got != ":2\r\n" {
+		t.Errorf("ZREMRANGEBYLEX = %q", got)
+	}
+
+	// The unified ZRANGE options from Redis 6.2.
+	run(t, ctx, "ZADD", "s", "1", "a", "2", "b", "3", "c")
+	if got := run(t, ctx, "ZRANGE", "s", "(1", "3", "BYSCORE"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("ZRANGE BYSCORE = %q, want 2", got)
+	}
+	if got := run(t, ctx, "ZRANGE", "s", "0", "-1", "REV"); !strings.Contains(got, "c\r\n$1\r\nb\r\n$1\r\na") {
+		t.Errorf("ZRANGE REV = %q", got)
+	}
+	if got := run(t, ctx, "ZRANGE", "s", "-inf", "+inf", "BYSCORE", "LIMIT", "1", "1"); !strings.HasPrefix(got, "*1\r\n") {
+		t.Errorf("ZRANGE BYSCORE LIMIT = %q", got)
+	}
+	// LIMIT is only legal with BYSCORE or BYLEX.
+	if got := run(t, ctx, "ZRANGE", "s", "0", "-1", "LIMIT", "0", "1"); !strings.Contains(got, "LIMIT") {
+		t.Errorf("ZRANGE LIMIT without BYSCORE should be rejected, got %q", got)
+	}
+	if got := run(t, ctx, "ZRANGESTORE", "out", "s", "0", "1"); got != ":2\r\n" {
+		t.Errorf("ZRANGESTORE = %q", got)
+	}
+	if got := run(t, ctx, "ZCARD", "out"); got != ":2\r\n" {
+		t.Errorf("ZRANGESTORE destination = %q", got)
+	}
+}

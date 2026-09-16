@@ -145,11 +145,39 @@ func (l *listView) RPop() ([]byte, bool) {
 	return v, true
 }
 
+// listpackSizeLimits maps the negative forms of list-max-listpack-size onto the
+// byte budgets Redis assigns them.
+var listpackSizeLimits = map[int]int{
+	-1: 4 * 1024,
+	-2: 8 * 1024,
+	-3: 16 * 1024,
+	-4: 32 * 1024,
+	-5: 64 * 1024,
+}
+
+// listWouldExceed reports whether adding an element of len bytes pushes the
+// listpack past the configured limit.
+//
+// list-max-listpack-size is entry based when positive and byte based when
+// negative, so a naive comparison of the entry count against a negative setting
+// promotes every list on its first element.
+func (l *listView) listWouldExceed(addedBytes int) bool {
+	limit := encoding.ListMaxListpackSize()
+	if limit >= 0 {
+		return l.lp.Len() >= limit
+	}
+	budget, ok := listpackSizeLimits[limit]
+	if !ok {
+		budget = 8 * 1024
+	}
+	return l.lp.Bytes()+addedBytes > budget
+}
+
 func (l *listView) growWouldPromote(val []byte) bool {
 	if l.ql != nil {
 		return false
 	}
-	return len(val) > listMaxListpackValue || l.lp.Len() >= encoding.ListMaxListpackSize()
+	return len(val) > listMaxListpackValue || l.listWouldExceed(len(val))
 }
 
 func (l *listView) promote() {
@@ -184,7 +212,21 @@ func (l *listView) replaceAll(items [][]byte) {
 			break
 		}
 	}
-	if l.ql != nil || oversized || len(items) > encoding.ListMaxListpackSize() {
+	total := 0
+	for _, it := range items {
+		total += len(it) + 2
+	}
+	tooBig := false
+	if limit := encoding.ListMaxListpackSize(); limit >= 0 {
+		tooBig = len(items) > limit
+	} else {
+		budget, ok := listpackSizeLimits[limit]
+		if !ok {
+			budget = 8 * 1024
+		}
+		tooBig = total > budget
+	}
+	if l.ql != nil || oversized || tooBig {
 		ql := quicklist.NewQuicklist()
 		for _, it := range items {
 			ql.RPush(it)
