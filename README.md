@@ -36,9 +36,9 @@ Official C Redis executes all commands on one thread, so throughput is capped by
 
 Measured on identical hardware and network conditions (AMD Ryzen 5 5600X, Debian Linux, 127.0.0.1 TCP socket), Gopherdis delivers **1.2x to 2.5x higher throughput** than C Redis 8.0 across workloads, from synthetic microbenchmarks to a 2M-key real-world cache load.
 
-![C Redis 8.0 vs Gopherdis Standard Benchmark](benchmark_chart.svg?v=4)
+![C Redis 8.0 vs Gopherdis Standard Benchmark](benchmark_chart.svg?v=5)
 
-![C Redis 8.0 vs Gopherdis SIMD Benchmark](benchmark_chart_simd.svg?v=4)
+![C Redis 8.0 vs Gopherdis SIMD Benchmark](benchmark_chart_simd.svg?v=5)
 
 ### Benchmark Summary
 
