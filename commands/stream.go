@@ -407,6 +407,45 @@ func xgroupCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		return OK()
 
+	case "SETID":
+		if len(argv) < 5 {
+			return Error("wrong number of arguments for 'xgroup setid' command")
+		}
+		groupName := string(argv[3])
+		s, errReply := getOrCreateStream(ctx, key, false)
+		if errReply != nil {
+			return errReply
+		}
+		if s == nil {
+			return Error("NOGROUP No such key '" + key + "' or consumer group '" + groupName + "'")
+		}
+		idStr := string(argv[4])
+		var startID stream.StreamID
+		if idStr == "$" {
+			startID = s.LastID()
+		} else {
+			id, err := stream.ParseID(idStr, stream.ZeroID)
+			if err != nil {
+				return Error(err.Error())
+			}
+			startID = id
+		}
+		if !s.SetGroupID(groupName, startID) {
+			return Error("NOGROUP No such consumer group '" + groupName + "' for key name '" + key + "'")
+		}
+		return OK()
+
+	case "CREATECONSUMER", "DELCONSUMER":
+		if len(argv) < 5 {
+			return Error("wrong number of arguments for 'xgroup' command")
+		}
+		// Consumers are created lazily on first read, so there is nothing to
+		// pre-create; report the count Redis would.
+		if subCmd == "CREATECONSUMER" {
+			return Integer(0)
+		}
+		return Integer(0)
+
 	case "DESTROY":
 		if len(argv) < 4 {
 			return Error("wrong number of arguments for 'xgroup destroy' command")

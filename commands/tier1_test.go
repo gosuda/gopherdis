@@ -993,3 +993,51 @@ func TestZsetRangeEdgeCases(t *testing.T) {
 		t.Errorf("ZCOUNT with infinities = %q", got)
 	}
 }
+
+func TestStreamIntrospection(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "XADD", "st", "1-1", "f", "v")
+	run(t, ctx, "XADD", "st", "2-1", "g", "w")
+	run(t, ctx, "XGROUP", "CREATE", "st", "grp", "0")
+
+	info := run(t, ctx, "XINFO", "STREAM", "st")
+	for _, want := range []string{"length", "last-generated-id", "2-1", "first-entry"} {
+		if !strings.Contains(info, want) {
+			t.Errorf("XINFO STREAM missing %q in %q", want, info)
+		}
+	}
+	groups := run(t, ctx, "XINFO", "GROUPS", "st")
+	if !strings.Contains(groups, "grp") {
+		t.Errorf("XINFO GROUPS = %q", groups)
+	}
+	if got := run(t, ctx, "XINFO", "CONSUMERS", "st", "nosuchgroup"); !strings.HasPrefix(got, "-NOGROUP") {
+		t.Errorf("XINFO CONSUMERS on a missing group = %q", got)
+	}
+	if got := run(t, ctx, "XINFO", "STREAM", "missing"); !strings.Contains(got, "no such key") {
+		t.Errorf("XINFO on a missing key = %q", got)
+	}
+
+	// XGROUP SETID repositions the group cursor.
+	if got := run(t, ctx, "XGROUP", "SETID", "st", "grp", "$"); got != "+OK\r\n" {
+		t.Errorf("XGROUP SETID = %q", got)
+	}
+	if got := run(t, ctx, "XGROUP", "SETID", "st", "nosuchgroup", "0"); !strings.HasPrefix(got, "-NOGROUP") {
+		t.Errorf("XGROUP SETID on a missing group = %q", got)
+	}
+}
+
+// TestStreamDigestIgnoresIdentity guards the digest against falling back to
+// formatting the struct, which would hash internal state instead of entries.
+func TestStreamDigestIgnoresIdentity(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "XADD", "a", "1-1", "f", "v")
+	run(t, ctx, "XADD", "b", "1-1", "f", "v")
+
+	if x, y := run(t, ctx, "DEBUG", "DIGEST-VALUE", "a"), run(t, ctx, "DEBUG", "DIGEST-VALUE", "b"); x != y {
+		t.Errorf("identical streams digested differently:\n %q\n %q", x, y)
+	}
+	run(t, ctx, "XADD", "b", "2-1", "g", "w")
+	if x, y := run(t, ctx, "DEBUG", "DIGEST-VALUE", "a"), run(t, ctx, "DEBUG", "DIGEST-VALUE", "b"); x == y {
+		t.Error("streams with different entries digested the same")
+	}
+}

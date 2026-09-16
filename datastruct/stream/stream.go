@@ -8,8 +8,8 @@ import (
 )
 
 var (
-	ErrGroupNotFound  = errors.New("NOGROUP No such key or consumer group")
-	ErrGroupExists    = errors.New("BUSYGROUP Consumer Group name already exists")
+	ErrGroupNotFound = errors.New("NOGROUP No such key or consumer group")
+	ErrGroupExists   = errors.New("BUSYGROUP Consumer Group name already exists")
 )
 
 // WaitClient represents a blocked XREAD / XREADGROUP client connection.
@@ -369,6 +369,68 @@ func (s *Stream) CreateGroup(name string, startID StreamID) error {
 
 	s.cgroups[name] = NewConsumerGroup(name, startID)
 	return nil
+}
+
+// GroupInfo is a snapshot of one consumer group, for XINFO GROUPS.
+type GroupInfo struct {
+	Name            string
+	Consumers       int
+	Pending         int
+	LastDeliveredID StreamID
+}
+
+// Groups returns a snapshot of every consumer group.
+func (s *Stream) Groups() []GroupInfo {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	out := make([]GroupInfo, 0, len(s.cgroups))
+	for name, cg := range s.cgroups {
+		out = append(out, GroupInfo{
+			Name:            name,
+			Consumers:       len(cg.Consumers),
+			Pending:         len(cg.Pel),
+			LastDeliveredID: cg.LastDeliveredID,
+		})
+	}
+	return out
+}
+
+// ConsumerInfo is a snapshot of one consumer, for XINFO CONSUMERS.
+type ConsumerInfo struct {
+	Name    string
+	Pending int
+	Idle    int64
+}
+
+// Consumers returns a snapshot of the consumers in a group.
+func (s *Stream) Consumers(group string) ([]ConsumerInfo, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cg, exists := s.cgroups[group]
+	if !exists {
+		return nil, false
+	}
+	out := make([]ConsumerInfo, 0, len(cg.Consumers))
+	for name, c := range cg.Consumers {
+		out = append(out, ConsumerInfo{Name: name, Pending: len(c.Pel), Idle: c.ActiveTime})
+	}
+	return out, true
+}
+
+// SetGroupID repositions a consumer group's last-delivered cursor, which is
+// what XGROUP SETID does. Returns false when the group does not exist.
+func (s *Stream) SetGroupID(name string, id StreamID) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	cg, exists := s.cgroups[name]
+	if !exists {
+		return false
+	}
+	cg.LastDeliveredID = id
+	return true
 }
 
 // DestroyGroup deletes a consumer group.

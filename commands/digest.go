@@ -5,6 +5,7 @@ import (
 	"encoding/hex"
 	"sort"
 
+	"github.com/gosuda/gopherdis/datastruct/stream"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -64,6 +65,28 @@ func digestValue(ctx *Context, key string) string {
 		}
 		for _, el := range z.elements() {
 			parts = append(parts, sha1hex([]byte(el.Member+":"+formatFloat(el.Score))))
+		}
+
+	case object.OBJ_STREAM:
+		// Without this a stream falls through to Robj.Bytes, which formats the
+		// struct and so digests internal state rather than the entries; two
+		// streams holding identical data would not match.
+		st, ok := obj.Ptr.(*stream.Stream)
+		if !ok {
+			return ""
+		}
+		for _, e := range st.Range(stream.ZeroID, stream.MaxID, 0, false) {
+			var b []byte
+			b = append(b, e.ID.String()...)
+			for i, f := range e.Fields {
+				b = append(b, '|')
+				b = append(b, f...)
+				b = append(b, '=')
+				if i < len(e.Values) {
+					b = append(b, e.Values[i]...)
+				}
+			}
+			parts = append(parts, sha1hex(b))
 		}
 
 	default:
