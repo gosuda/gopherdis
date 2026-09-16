@@ -201,7 +201,10 @@ func (sl *zskiplist) getElementByRank(rank uint64) *zskiplistNode {
 
 // ZSet is a combined Hash Map + Skiplist structure for Redis Sorted Sets.
 type ZSet struct {
-	mu   sync.Mutex
+	// RWMutex, not Mutex: a leaderboard is read dominated (ZRANK, ZSCORE,
+	// ZRANGE) and getRank/getElementByRank only walk the structure, so those
+	// have no reason to serialize against each other.
+	mu   sync.RWMutex
 	dict map[string]float64
 	sl   *zskiplist
 }
@@ -219,8 +222,8 @@ func (zs *ZSet) Len() int64 {
 	if zs == nil {
 		return 0
 	}
-	zs.mu.Lock()
-	defer zs.mu.Unlock()
+	zs.mu.RLock()
+	defer zs.mu.RUnlock()
 	return int64(zs.sl.length)
 }
 
@@ -251,8 +254,8 @@ func (zs *ZSet) Score(member string) (float64, bool) {
 	if zs == nil {
 		return 0, false
 	}
-	zs.mu.Lock()
-	defer zs.mu.Unlock()
+	zs.mu.RLock()
+	defer zs.mu.RUnlock()
 
 	score, ok := zs.dict[member]
 	return score, ok
@@ -280,8 +283,8 @@ func (zs *ZSet) Rank(member string, reverse bool) (int64, bool) {
 	if zs == nil {
 		return -1, false
 	}
-	zs.mu.Lock()
-	defer zs.mu.Unlock()
+	zs.mu.RLock()
+	defer zs.mu.RUnlock()
 
 	score, ok := zs.dict[member]
 	if !ok {
@@ -302,8 +305,8 @@ func (zs *ZSet) Range(start, stop int64, reverse bool) []ZSetElement {
 	if zs == nil {
 		return nil
 	}
-	zs.mu.Lock()
-	defer zs.mu.Unlock()
+	zs.mu.RLock()
+	defer zs.mu.RUnlock()
 
 	length := int64(zs.sl.length)
 	if length == 0 {
