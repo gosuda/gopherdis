@@ -103,7 +103,41 @@ func (t *Table) Register(cmd *Command) {
 
 // Lookup finds a command by name (case-insensitive).
 func (t *Table) Lookup(name string) *Command {
-	return t.cmds[strings.ToLower(name)]
+	if c, ok := t.cmds[name]; ok {
+		// Already lowercase, which is the common case for a well-behaved client.
+		return c
+	}
+	return t.cmds[toLowerASCII(name)]
+}
+
+// toLowerASCII lowercases a command name without allocating when it is already
+// lowercase, which strings.ToLower cannot promise for the miss path.
+func toLowerASCII(s string) string {
+	hasUpper := false
+	for i := 0; i < len(s); i++ {
+		if s[i] >= 'A' && s[i] <= 'Z' {
+			hasUpper = true
+			break
+		}
+	}
+	if !hasUpper {
+		return s
+	}
+	var buf [32]byte
+	var b []byte
+	if len(s) <= len(buf) {
+		b = buf[:len(s)]
+	} else {
+		b = make([]byte, len(s))
+	}
+	for i := 0; i < len(s); i++ {
+		c := s[i]
+		if c >= 'A' && c <= 'Z' {
+			c += 'a' - 'A'
+		}
+		b[i] = c
+	}
+	return string(b)
 }
 
 // Count returns the number of registered commands.
@@ -164,7 +198,7 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 		if cmd.Flags&FlagFast != 0 {
 			cat |= acl.CatFast
 		}
-		cmdLower := strings.ToLower(cmd.Name)
+		cmdLower := cmd.Name // Register lowercases it
 		if cmdLower != "auth" && !ctx.User.CanExecute(cmdLower, cat) {
 			return []byte(fmt.Sprintf("-NOPERM this user has no permissions to run the '%s' command\r\n", cmd.Name))
 		}
@@ -172,7 +206,7 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 
 	// Cluster Slot Redirection (-MOVED) Check
 	if ctx != nil && ctx.Cluster != nil && ctx.Cluster.ClusterEnabled && len(argv) >= 2 {
-		cmdLower := strings.ToLower(cmd.Name)
+		cmdLower := cmd.Name // Register lowercases it
 		if cmdLower != "cluster" && cmdLower != "auth" && cmdLower != "ping" && cmdLower != "info" && cmdLower != "quit" {
 			key := string(argv[1])
 			if isLocal, slot, ownerAddr := ctx.Cluster.IsSlotLocal(key); !isLocal {
@@ -183,7 +217,7 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 
 	// If transaction is active, queue non-transaction control commands
 	if ctx != nil && ctx.Tx != nil && ctx.Tx.InMulti {
-		lower := strings.ToLower(name)
+		lower := cmd.Name // Register lowercases it
 		if lower != "exec" && lower != "discard" && lower != "multi" && lower != "watch" {
 			clonedArgv := make([][]byte, len(argv))
 			for i, arg := range argv {
@@ -196,7 +230,7 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 
 	// Acquire operation lock on DB for transaction isolation (unless inside an active EXEC/EVAL transaction)
 	if ctx != nil && ctx.DB != nil && !ctx.InTxExecution {
-		cmdLower := strings.ToLower(cmd.Name)
+		cmdLower := cmd.Name // Register lowercases it
 		if cmdLower != "exec" && cmdLower != "eval" && cmdLower != "evalsha" {
 			ctx.DB.BeginOp()
 			defer ctx.DB.EndOp()
