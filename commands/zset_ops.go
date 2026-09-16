@@ -258,9 +258,13 @@ func zrandmemberCommand(ctx *Context, argv [][]byte) []byte {
 		return BulkString([]byte(all[rand.Intn(len(all))].Member))
 	}
 
-	count, err := strconv.Atoi(string(argv[2]))
+	raw, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
+	}
+	count, withRepeats, errReply := randCount(raw)
+	if errReply != nil {
+		return errReply
 	}
 	withScores := len(argv) > 3 && strings.ToUpper(string(argv[3])) == "WITHSCORES"
 	if len(all) == 0 {
@@ -268,10 +272,9 @@ func zrandmemberCommand(ctx *Context, argv [][]byte) []byte {
 	}
 
 	// A negative count may repeat members and returns exactly |count|.
-	if count < 0 {
-		n := -count
-		out := make([]skiplist.ZSetElement, 0, n)
-		for i := 0; i < n; i++ {
+	if withRepeats {
+		out := make([]skiplist.ZSetElement, 0, count)
+		for i := 0; i < count; i++ {
 			out = append(out, all[rand.Intn(len(all))])
 		}
 		return zsetReply(out, withScores)

@@ -271,9 +271,13 @@ func srandmemberCommand(ctx *Context, argv [][]byte) []byte {
 		return BulkString([]byte(m[rand.Intn(len(m))]))
 	}
 
-	count, err := strconv.Atoi(string(argv[2]))
+	raw, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
+	}
+	count, withRepeats, errReply := randCount(raw)
+	if errReply != nil {
+		return errReply
 	}
 	if s == nil || s.Card() == 0 {
 		return Array(nil)
@@ -281,10 +285,9 @@ func srandmemberCommand(ctx *Context, argv [][]byte) []byte {
 	members := s.Members()
 
 	// A negative count may repeat members and always returns exactly |count|.
-	if count < 0 {
-		n := -count
-		out := make([][]byte, 0, n)
-		for i := 0; i < n; i++ {
+	if withRepeats {
+		out := make([][]byte, 0, count)
+		for i := 0; i < count; i++ {
 			out = append(out, BulkString([]byte(members[rand.Intn(len(members))])))
 		}
 		return Array(out)

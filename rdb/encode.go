@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
@@ -211,6 +212,26 @@ func (enc *Encoder) WriteEntry(entry db.DBEntry) error {
 		}
 
 	case object.OBJ_HASH:
+		if lp, ok := obj.Ptr.(*listpack.Listpack); ok && lp != nil {
+			if err := enc.writeByte(TypeHash); err != nil {
+				return err
+			}
+			if err := enc.WriteString(key); err != nil {
+				return err
+			}
+			if err := enc.WriteLen(uint64(lp.Len() / 2)); err != nil {
+				return err
+			}
+			var encodeErr error
+			lp.ForEach(func(_ int, v []byte) bool {
+				if err := enc.WriteString(v); err != nil {
+					encodeErr = err
+					return false
+				}
+				return true
+			})
+			return encodeErr
+		}
 		if d, ok := obj.Ptr.(*dict.Dict); ok && d != nil {
 			if err := enc.writeByte(TypeHash); err != nil {
 				return err

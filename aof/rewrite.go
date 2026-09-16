@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
@@ -59,7 +60,12 @@ func writeEntryToRESP(w io.Writer, entry db.DBEntry) error {
 		}
 
 	case object.OBJ_HASH:
-		if d, ok := obj.Ptr.(*dict.Dict); ok && d != nil && d.Len() > 0 {
+		if lp, ok := obj.Ptr.(*listpack.Listpack); ok && lp != nil && lp.Len() > 0 {
+			argv := make([][]byte, 0, lp.Len()+2)
+			argv = append(argv, []byte("HSET"), []byte(key))
+			argv = append(argv, lp.All()...)
+			cmds = append(cmds, argv)
+		} else if d, ok := obj.Ptr.(*dict.Dict); ok && d != nil && d.Len() > 0 {
 			argv := make([][]byte, 0, d.Len()*2+2)
 			argv = append(argv, []byte("HSET"), []byte(key))
 			d.ForEach(func(f string, v []byte) {

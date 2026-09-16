@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/gosuda/gopherdis/datastruct/listpack"
+
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -214,6 +216,8 @@ func estimateObjectSize(key string, obj *object.Robj) int64 {
 		size += int64(len(v))
 	case int64:
 		size += 8
+	case *listpack.Listpack:
+		size += int64(v.Bytes())
 	case map[string][]byte:
 		for k, val := range v {
 			size += int64(len(k) + len(val) + 32)

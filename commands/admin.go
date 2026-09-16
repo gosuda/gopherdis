@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/gosuda/gopherdis/db"
+	"github.com/gosuda/gopherdis/encoding"
 )
 
 var (
@@ -22,23 +23,23 @@ var (
 
 	configMu sync.RWMutex
 	configs  = map[string]string{
-		"maxmemory":                 "0",
-		"maxmemory-policy":          "noeviction",
-		"timeout":                   "0",
-		"databases":                 "16",
-		"appendonly":                "no",
-		"slowlog-log-slower-than":   "10000",
-		"slowlog-max-len":           "128",
-		"proto-max-bulk-len":        "536870912",
+		"maxmemory":               "0",
+		"maxmemory-policy":        "noeviction",
+		"timeout":                 "0",
+		"databases":               "16",
+		"appendonly":              "no",
+		"slowlog-log-slower-than": "10000",
+		"slowlog-max-len":         "128",
+		"proto-max-bulk-len":      "536870912",
 	}
 )
 
 type SlowlogEntry struct {
-	ID        int64
-	Timestamp int64
-	Duration  int64 // microseconds
-	Args      []string
-	ClientIP  string
+	ID         int64
+	Timestamp  int64
+	Duration   int64 // microseconds
+	Args       []string
+	ClientIP   string
 	ClientName string
 }
 
@@ -474,6 +475,15 @@ func configCommand(ctx *Context, argv [][]byte) []byte {
 				replies = append(replies, BulkString([]byte(k)), BulkString([]byte(v)))
 			}
 		}
+		// The encoding thresholds live in the encoding package, so report them
+		// from there rather than from a stale copy in the configs map.
+		for _, k := range encoding.Names() {
+			if pattern == "*" || pattern == k || strings.Contains(k, pattern) {
+				if v, ok := encoding.Get(k); ok {
+					replies = append(replies, BulkString([]byte(k)), BulkString([]byte(strconv.FormatInt(v, 10))))
+				}
+			}
+		}
 		return Array(replies)
 
 	case "SET":
@@ -482,6 +492,17 @@ func configCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		param := strings.ToLower(string(argv[2]))
 		val := string(argv[3])
+
+		// Encoding thresholds drive real conversions, so they have to reach the
+		// encoding package rather than only landing in the configs map.
+		if n, err := strconv.ParseInt(val, 10, 64); err == nil {
+			if encoding.Set(param, n) {
+				configMu.Lock()
+				configs[param] = val
+				configMu.Unlock()
+				return OK()
+			}
+		}
 
 		// Parameters that back a live setting have to be applied, not just
 		// recorded; CONFIG SET maxmemory used to return +OK and change nothing.

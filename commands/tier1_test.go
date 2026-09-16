@@ -427,3 +427,71 @@ func TestHashOps(t *testing.T) {
 		t.Errorf("HRANDFIELD with a negative count = %q, want 5 entries", got)
 	}
 }
+
+// TestRandCountOverflow covers a crash: negating a count of math.MinInt64
+// overflows, and the allocation that followed took the process down.
+func TestRandCountOverflow(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "HSET", "h", "f", "v")
+	run(t, ctx, "SADD", "s", "m")
+	run(t, ctx, "ZADD", "z", "1", "m")
+
+	const minInt64 = "-9223372036854775808"
+	for _, c := range [][]string{
+		{"HRANDFIELD", "h", minInt64},
+		{"SRANDMEMBER", "s", minInt64},
+		{"ZRANDMEMBER", "z", minInt64},
+	} {
+		if got := run(t, ctx, c...); !strings.Contains(got, "value is out of range") {
+			t.Errorf("%s with the smallest int64 = %q, want an out of range error", c[0], got)
+		}
+	}
+	// A merely large count is refused rather than attempted.
+	if got := run(t, ctx, "HRANDFIELD", "h", "-999999999"); !strings.Contains(got, "value is out of range") {
+		t.Errorf("HRANDFIELD with a huge count = %q", got)
+	}
+	// Ordinary negative counts still work.
+	if got := run(t, ctx, "HRANDFIELD", "h", "-3"); !strings.HasPrefix(got, "*3\r\n") {
+		t.Errorf("HRANDFIELD -3 = %q, want 3 entries", got)
+	}
+}
+
+func TestHashEncodingTransitions(t *testing.T) {
+	ctx := newCtx()
+
+	// A new hash starts compact.
+	run(t, ctx, "HSET", "h", "f", "v")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "h"); !strings.Contains(got, "listpack") {
+		t.Fatalf("a small hash should be listpack encoded, got %q", got)
+	}
+
+	// Crossing the entry threshold promotes it, and the data survives.
+	for i := 0; i < encodingEntriesProbe; i++ {
+		run(t, ctx, "HSET", "h", "f"+itoa(i), "v"+itoa(i))
+	}
+	if got := run(t, ctx, "OBJECT", "ENCODING", "h"); !strings.Contains(got, "hashtable") {
+		t.Fatalf("a large hash should be hashtable encoded, got %q", got)
+	}
+	if got := run(t, ctx, "HGET", "h", "f5"); !strings.Contains(got, "v5") {
+		t.Errorf("promotion lost data: HGET f5 = %q", got)
+	}
+	if got := run(t, ctx, "HLEN", "h"); !strings.Contains(got, itoa(encodingEntriesProbe+1)) {
+		t.Errorf("promotion changed the field count: %q", got)
+	}
+
+	// A single oversized value also forces promotion.
+	run(t, ctx, "HSET", "big", "f", strings.Repeat("x", 100))
+	if got := run(t, ctx, "OBJECT", "ENCODING", "big"); !strings.Contains(got, "hashtable") {
+		t.Errorf("an oversized value should force hashtable, got %q", got)
+	}
+
+	// Deleting back down does not demote, matching Redis.
+	for i := 0; i < encodingEntriesProbe; i++ {
+		run(t, ctx, "HDEL", "h", "f"+itoa(i))
+	}
+	if got := run(t, ctx, "OBJECT", "ENCODING", "h"); !strings.Contains(got, "hashtable") {
+		t.Errorf("encoding should not convert back, got %q", got)
+	}
+}
+
+const encodingEntriesProbe = 200

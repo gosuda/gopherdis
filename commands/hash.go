@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -119,35 +119,30 @@ func hincrbyfloatCommand(ctx *Context, argv [][]byte) []byte {
 	return BulkString([]byte(formatted))
 }
 
-func getOrCreateHash(ctx *Context, key string) (*dict.Dict, bool, []byte) {
+func getOrCreateHash(ctx *Context, key string) (*hashView, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		d := dict.New()
-		ctx.DB.Set(key, &object.Robj{
+		// New hashes start in the compact encoding, as Redis does.
+		lp := listpack.New()
+		newObj := &object.Robj{
 			Type:     object.OBJ_HASH,
 			Encoding: object.OBJ_ENCODING_LISTPACK,
-			Ptr:      d,
-		})
-		return d, true, nil
+			Ptr:      lp,
+		}
+		ctx.DB.Set(key, newObj)
+		return &hashView{ctx: ctx, key: key, obj: newObj, lp: lp}, true, nil
 	}
 	if obj.Type != object.OBJ_HASH {
 		return nil, false, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	if d, ok := obj.Ptr.(*dict.Dict); ok {
-		return d, false, nil
+	h, errReply := newHashView(ctx, key, obj)
+	if errReply != nil {
+		return nil, false, errReply
 	}
-	if h, ok := obj.Ptr.(map[string][]byte); ok {
-		d := dict.New()
-		for k, v := range h {
-			d.Set(k, v)
-		}
-		obj.Ptr = d
-		return d, false, nil
-	}
-	return nil, false, Error("ERR internal hash type error")
+	return h, false, nil
 }
 
-func getHash(ctx *Context, key string) (*dict.Dict, []byte) {
+func getHash(ctx *Context, key string) (*hashView, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return nil, nil
@@ -155,18 +150,7 @@ func getHash(ctx *Context, key string) (*dict.Dict, []byte) {
 	if obj.Type != object.OBJ_HASH {
 		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	if d, ok := obj.Ptr.(*dict.Dict); ok {
-		return d, nil
-	}
-	if h, ok := obj.Ptr.(map[string][]byte); ok {
-		d := dict.New()
-		for k, v := range h {
-			d.Set(k, v)
-		}
-		obj.Ptr = d
-		return d, nil
-	}
-	return nil, Error("ERR internal hash type error")
+	return newHashView(ctx, key, obj)
 }
 
 func hsetCommand(ctx *Context, argv [][]byte) []byte {

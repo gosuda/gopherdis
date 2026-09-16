@@ -57,17 +57,17 @@ type ReplicationFeeder interface {
 
 // Context encapsulates execution context passed to command handlers.
 type Context struct {
-	DB          *db.ShardedDB
-	AOF         AOFFeeder
-	Tx          *TxState
-	RDB         RDBManager
-	PubSub      PubSubHub
-	Sub         *pubsub.Subscriber
-	Replication ReplicationFeeder
-	ACL         *acl.Manager
-	User        *acl.User
-	Scripting   *scripting.Engine
-	Cluster     *cluster.ClusterManager
+	DB            *db.ShardedDB
+	AOF           AOFFeeder
+	Tx            *TxState
+	RDB           RDBManager
+	PubSub        PubSubHub
+	Sub           *pubsub.Subscriber
+	Replication   ReplicationFeeder
+	ACL           *acl.Manager
+	User          *acl.User
+	Scripting     *scripting.Engine
+	Cluster       *cluster.ClusterManager
 	InTxExecution bool
 }
 

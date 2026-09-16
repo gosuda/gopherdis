@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
@@ -17,6 +18,13 @@ import (
 // same arena to two keys would let a trim on one corrupt reads on the other.
 func cloneContainer(obj *object.Robj) (*object.Robj, bool) {
 	switch v := obj.Ptr.(type) {
+	case *listpack.Listpack:
+		lp := listpack.New()
+		for _, e := range v.All() {
+			lp.Append(e)
+		}
+		return &object.Robj{Type: obj.Type, Encoding: obj.Encoding, Ptr: lp}, true
+
 	case *dict.Dict:
 		d := dict.New()
 		v.ForEach(func(f string, val []byte) {

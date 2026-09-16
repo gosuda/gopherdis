@@ -62,9 +62,13 @@ func hrandfieldCommand(ctx *Context, argv [][]byte) []byte {
 		return BulkString([]byte(keys[rand.Intn(len(keys))]))
 	}
 
-	count, err := strconv.Atoi(string(argv[2]))
+	raw, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
+	}
+	count, withRepeats, errReply := randCount(raw)
+	if errReply != nil {
+		return errReply
 	}
 	withValues := len(argv) > 3 && strings.ToUpper(string(argv[3])) == "WITHVALUES"
 	if d == nil || d.Len() == 0 {
@@ -85,10 +89,9 @@ func hrandfieldCommand(ctx *Context, argv [][]byte) []byte {
 	}
 
 	// A negative count may repeat fields and returns exactly |count|.
-	if count < 0 {
-		n := -count
-		out := make([]string, 0, n)
-		for i := 0; i < n; i++ {
+	if withRepeats {
+		out := make([]string, 0, count)
+		for i := 0; i < count; i++ {
 			out = append(out, keys[rand.Intn(len(keys))])
 		}
 		return emit(out)
