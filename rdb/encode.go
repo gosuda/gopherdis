@@ -10,6 +10,7 @@ import (
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/object"
@@ -177,8 +178,21 @@ func (enc *Encoder) WriteEntry(entry db.DBEntry) error {
 		}
 
 	case object.OBJ_SET:
-		smap, ok := obj.Ptr.(map[string]struct{})
-		if !ok || smap == nil {
+		// Commands store sets as *set.Set; the bare map is only produced by older
+		// snapshots. Handling just the map silently dropped every set from the RDB.
+		var members []string
+		switch v := obj.Ptr.(type) {
+		case *set.Set:
+			if v == nil {
+				return nil
+			}
+			members = v.Members()
+		case map[string]struct{}:
+			members = make([]string, 0, len(v))
+			for mem := range v {
+				members = append(members, mem)
+			}
+		default:
 			return nil
 		}
 		if err := enc.writeByte(TypeSet); err != nil {
@@ -187,10 +201,10 @@ func (enc *Encoder) WriteEntry(entry db.DBEntry) error {
 		if err := enc.WriteString(key); err != nil {
 			return err
 		}
-		if err := enc.WriteLen(uint64(len(smap))); err != nil {
+		if err := enc.WriteLen(uint64(len(members))); err != nil {
 			return err
 		}
-		for mem := range smap {
+		for _, mem := range members {
 			if err := enc.WriteString([]byte(mem)); err != nil {
 				return err
 			}

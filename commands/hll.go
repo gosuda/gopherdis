@@ -30,6 +30,11 @@ func pfaddCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	var h *hll.HLL
 
+	// HLL registers are poked in place, so every PFADD/PFCOUNT touching the same
+	// key has to be serialised on the key lock.
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, exists := ctx.DB.Get(key)
 	if exists {
 		if obj.Type != object.OBJ_STRING {
@@ -51,7 +56,10 @@ func pfaddCommand(ctx *Context, argv [][]byte) []byte {
 		}
 	}
 
-	if !exists {
+	// Always store the result: when the existing value was not a usable dense HLL,
+	// hll.FromBytes returned a detached copy, so skipping the write silently threw
+	// the update away while still replying :1.
+	if !exists || updated {
 		_ = ctx.DB.Set(key, object.CreateRawStringObject(h.Bytes()))
 	}
 
@@ -65,6 +73,12 @@ func pfcountCommand(ctx *Context, argv [][]byte) []byte {
 	if len(argv) == 2 {
 		// Single key fast path
 		key := string(argv[1])
+
+		// Count() refreshes the cached-cardinality bytes inside the stored blob,
+		// so even this read path must hold the key lock.
+		ctx.DB.LockKey(key)
+		defer ctx.DB.UnlockKey(key)
+
 		obj, exists := ctx.DB.Get(key)
 		if !exists {
 			return Integer(0)
@@ -100,6 +114,10 @@ func pfcountCommand(ctx *Context, argv [][]byte) []byte {
 
 func pfmergeCommand(ctx *Context, argv [][]byte) []byte {
 	destKey := string(argv[1])
+
+	ctx.DB.LockKey(destKey)
+	defer ctx.DB.UnlockKey(destKey)
+
 	merged := hll.NewHLL()
 
 	// Merge dest key if it already exists

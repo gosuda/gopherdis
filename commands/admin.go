@@ -4,12 +4,13 @@ import (
 	"fmt"
 	"os"
 	"runtime"
-	"runtime/debug"
 	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
+
+	"github.com/gosuda/gopherdis/db"
 )
 
 var (
@@ -104,6 +105,14 @@ func init() {
 	})
 	DefaultTable.Register(&Command{
 		Name:    "flushdb",
+		Handler: flushdbCommand,
+		Arity:   -1,
+		Flags:   FlagWrite,
+	})
+	// FLUSHALL was missing entirely, so clients got "unknown command" for one of
+	// the commands the README claims support for.
+	DefaultTable.Register(&Command{
+		Name:    "flushall",
 		Handler: flushdbCommand,
 		Arity:   -1,
 		Flags:   FlagWrite,
@@ -224,15 +233,11 @@ func infoCommand(ctx *Context, argv [][]byte) []byte {
 	var sb strings.Builder
 	uptime := int64(time.Since(serverStartTime).Seconds())
 
-	// Only the memory section needs exact stats; collect them after a full GC
-	// and return free spans to the OS so used_memory/used_memory_rss reflect
-	// live data instead of GC-cycle headroom (Go's runtime otherwise reports
-	// up to 2x live heap mid-cycle under GOGC=100).
+	// Report the runtime's numbers as they are. Forcing runtime.GC() plus
+	// debug.FreeOSMemory() here made every metrics scrape a stop-the-world pause
+	// followed by a madvise sweep, so monitoring INFO degraded the server it was
+	// measuring (and the reported figures did not describe steady state anyway).
 	var m runtime.MemStats
-	if section == "all" || section == "memory" || section == "default" {
-		runtime.GC()
-		debug.FreeOSMemory()
-	}
 	runtime.ReadMemStats(&m)
 
 	keysCount := int64(0)
@@ -425,6 +430,32 @@ func slowlogCommand(ctx *Context, argv [][]byte) []byte {
 	}
 }
 
+// parseMemoryValue parses a maxmemory value, accepting a plain byte count or the
+// usual "100mb" / "1gb" suffixes that redis-cli sends.
+func parseMemoryValue(val string) (int64, error) {
+	v := strings.TrimSpace(strings.ToLower(val))
+	mult := int64(1)
+	for _, suffix := range []struct {
+		name string
+		mult int64
+	}{
+		{"kb", 1024}, {"mb", 1024 * 1024}, {"gb", 1024 * 1024 * 1024},
+		{"k", 1000}, {"m", 1000 * 1000}, {"g", 1000 * 1000 * 1000},
+		{"b", 1},
+	} {
+		if strings.HasSuffix(v, suffix.name) {
+			mult = suffix.mult
+			v = strings.TrimSpace(strings.TrimSuffix(v, suffix.name))
+			break
+		}
+	}
+	n, err := strconv.ParseInt(v, 10, 64)
+	if err != nil || n < 0 {
+		return 0, fmt.Errorf("invalid memory value")
+	}
+	return n * mult, nil
+}
+
 func configCommand(ctx *Context, argv [][]byte) []byte {
 	subCmd := strings.ToUpper(string(argv[1]))
 
@@ -451,6 +482,22 @@ func configCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		param := strings.ToLower(string(argv[2]))
 		val := string(argv[3])
+
+		// Parameters that back a live setting have to be applied, not just
+		// recorded; CONFIG SET maxmemory used to return +OK and change nothing.
+		if ctx != nil && ctx.DB != nil {
+			switch param {
+			case "maxmemory":
+				bytesVal, err := parseMemoryValue(val)
+				if err != nil {
+					return Error("Invalid argument '" + val + "' for CONFIG SET 'maxmemory'")
+				}
+				ctx.DB.SetMaxMemory(bytesVal)
+			case "maxmemory-policy":
+				ctx.DB.SetEvictionPolicy(db.ParseEvictionPolicy(val))
+			}
+		}
+
 		configMu.Lock()
 		configs[param] = val
 		configMu.Unlock()

@@ -183,7 +183,18 @@ func (a *AOF) Rewrite(targetDB *db.ShardedDB) error {
 		_ = os.Remove(tempPath)
 	}()
 
-	// 1. Enable rewrite buffering for incoming writes
+	// 1. Enable rewrite buffering and take the base snapshot as one atomic step.
+	//
+	// "Start buffering" and "snapshot the shards" must not be separable. Shards are
+	// walked in order, so a write landing in a not-yet-visited shard after
+	// buffering was enabled ends up both in the snapshot and in rewriteBuf, and on
+	// reload the replayed AOF applies it twice - LPUSH, INCR, SADD and XADD are not
+	// idempotent, so the restored dataset is simply wrong. With no fork/COW
+	// available, the exclusive transaction lock is what makes the pair atomic.
+	// BGREWRITEAOF is rare and this costs a write stall for the snapshot's
+	// duration, which is the cheap side of the trade against a corrupt AOF.
+	targetDB.BeginTx()
+
 	a.rewriteMu.Lock()
 	a.isRewriting = true
 	a.rewriteBuf = make([][]byte, 0, 1024)
@@ -191,7 +202,7 @@ func (a *AOF) Rewrite(targetDB *db.ShardedDB) error {
 
 	bufWriter := bufio.NewWriterSize(tempFile, 64*1024)
 
-	// 2. Iterate shards with minimal lock hold time
+	// 2. Iterate shards; no writer can interleave while txMu is held exclusively.
 	err = targetDB.ForEachShardSnapshot(func(entries []db.DBEntry) error {
 		for _, entry := range entries {
 			if err := writeEntryToRESP(bufWriter, entry); err != nil {
@@ -200,6 +211,8 @@ func (a *AOF) Rewrite(targetDB *db.ShardedDB) error {
 		}
 		return nil
 	})
+
+	targetDB.EndTx()
 	if err != nil {
 		a.rewriteMu.Lock()
 		a.isRewriting = false

@@ -44,8 +44,18 @@ func (s *Subscriber) HasSubscriptions() bool {
 }
 
 // TrySend attempts a non-blocking push to the subscriber's outbound message queue.
+//
+// The closed flag is checked under s.mu and the send happens while still holding
+// it, because Close closes MsgCh under the same lock. Checking a lock-free flag
+// and then sending leaves a window in which Close runs in between, and a send on
+// a closed channel panics and takes the whole server down. Publish can reach a
+// subscriber that PUNSUBSCRIBE/UnsubscribeAll just closed via the copy-on-write
+// pattern list, so that window is genuinely reachable.
 func (s *Subscriber) TrySend(msg []byte) bool {
-	if atomic.LoadInt32(&s.closed) == 1 {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.closed == 1 {
 		return false
 	}
 	select {
@@ -59,13 +69,15 @@ func (s *Subscriber) TrySend(msg []byte) bool {
 
 // Close marks the subscriber closed and drains the message channel.
 func (s *Subscriber) Close() {
-	if atomic.CompareAndSwapInt32(&s.closed, 0, 1) {
-		s.mu.Lock()
-		s.channels = make(map[string]struct{})
-		s.patterns = make(map[string]struct{})
-		s.mu.Unlock()
-		close(s.MsgCh)
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if !atomic.CompareAndSwapInt32(&s.closed, 0, 1) {
+		return
 	}
+	s.channels = make(map[string]struct{})
+	s.patterns = make(map[string]struct{})
+	close(s.MsgCh)
 }
 
 // PatternEntry represents a pattern subscription pair.

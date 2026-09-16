@@ -67,6 +67,10 @@ func getOrCreateSet(ctx *Context, key string) (*set.Set, bool, []byte) {
 
 func saddCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	s, _, errReply := getOrCreateSet(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -82,6 +86,10 @@ func saddCommand(ctx *Context, argv [][]byte) []byte {
 
 func sremCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return Integer(0)
@@ -167,6 +175,10 @@ func scardCommand(ctx *Context, argv [][]byte) []byte {
 
 func spopCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return NullBulkString()

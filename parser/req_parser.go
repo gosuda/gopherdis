@@ -16,6 +16,19 @@ var (
 	ErrUnexpectedEOF          = errors.New("protocol error: unexpected EOF")
 )
 
+const (
+	// MaxMultiBulkLength caps the argument count of a single command, and
+	// MaxBulkLength caps one argument's size (Redis' proto-max-bulk-len).
+	// Without them "*2000000000\r\n" or "$9999999999\r\n" makes the server
+	// allocate whatever an unauthenticated client asks it to.
+	MaxMultiBulkLength = 1024 * 1024
+	MaxBulkLength      = 512 * 1024 * 1024
+
+	// maxPrealloc bounds the up-front argv capacity so a large but legal argc
+	// still cannot be used to force one huge allocation before any data arrives.
+	maxPrealloc = 1024
+)
+
 // ParseRequest parses an incoming client command from a bufio.Reader.
 // If arena is provided, byte slices are copied to the arena to minimize GC pressure.
 func ParseRequest(r *bufio.Reader, a *pure.Arena) ([][]byte, error) {
@@ -43,11 +56,15 @@ func parseMultiBulkRequest(r *bufio.Reader, a *pure.Arena) ([][]byte, error) {
 	}
 
 	argc, err := strconv.ParseInt(string(line[1:]), 10, 64)
-	if err != nil || argc <= 0 {
+	if err != nil || argc <= 0 || argc > MaxMultiBulkLength {
 		return nil, ErrInvalidMultiBulkLength
 	}
 
-	argv := make([][]byte, 0, argc)
+	prealloc := argc
+	if prealloc > maxPrealloc {
+		prealloc = maxPrealloc
+	}
+	argv := make([][]byte, 0, prealloc)
 
 	for i := int64(0); i < argc; i++ {
 		bLine, err := readLine(r)
@@ -59,13 +76,18 @@ func parseMultiBulkRequest(r *bufio.Reader, a *pure.Arena) ([][]byte, error) {
 		}
 
 		bulkLen, err := strconv.ParseInt(string(bLine[1:]), 10, 64)
-		if err != nil || bulkLen < 0 {
+		if err != nil || bulkLen < 0 || bulkLen > MaxBulkLength {
 			return nil, ErrInvalidBulkLength
 		}
 
 		buf := make([]byte, bulkLen+2) // bulk data + \r\n
 		if _, err := io.ReadFull(r, buf); err != nil {
 			return nil, ErrUnexpectedEOF
+		}
+		// The trailing CRLF has to be verified: accepting a frame without it leaves
+		// the connection's byte stream desynchronised for every later command.
+		if buf[bulkLen] != '\r' || buf[bulkLen+1] != '\n' {
+			return nil, ErrInvalidBulkLength
 		}
 
 		arg := buf[:bulkLen]

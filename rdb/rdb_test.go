@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/object"
@@ -35,13 +36,10 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	ql.RPush([]byte("item3"))
 	_ = originDB.Set("list_key", object.CreateObject(object.OBJ_LIST, ql))
 
-	// 4. Set
-	smap := map[string]struct{}{
-		"alpha": {},
-		"beta":  {},
-		"gamma": {},
-	}
-	_ = originDB.Set("set_key", object.CreateObject(object.OBJ_SET, smap))
+	// 4. Set (stored the way the SADD command handler stores it)
+	sset := set.New()
+	sset.Add("alpha", "beta", "gamma")
+	_ = originDB.Set("set_key", object.CreateObject(object.OBJ_SET, sset))
 
 	// 5. Hash
 	hmap := map[string][]byte{
@@ -105,9 +103,15 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	if !ok || val.Type != object.OBJ_SET {
 		t.Fatalf("set missing or wrong type")
 	}
-	restoredSet := val.Ptr.(map[string]struct{})
-	if len(restoredSet) != 3 {
-		t.Fatalf("expected set len 3, got %d", len(restoredSet))
+	restoredSet, ok := val.Ptr.(*set.Set)
+	if !ok {
+		t.Fatalf("expected set to decode as *set.Set, got %T", val.Ptr)
+	}
+	if restoredSet.Card() != 3 {
+		t.Fatalf("expected set len 3, got %d", restoredSet.Card())
+	}
+	if !restoredSet.Contains("alpha") || !restoredSet.Contains("gamma") {
+		t.Fatalf("restored set lost members: %v", restoredSet.Members())
 	}
 
 	// Verify Hash

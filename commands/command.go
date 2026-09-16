@@ -209,6 +209,12 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 	if (cmd.Flags&FlagWrite) != 0 && ctx != nil {
 		// Only feed if execution succeeded (not an error reply)
 		if len(reply) > 0 && reply[0] != '-' {
+			// Container commands (HSET, LPUSH, SADD, ZADD, XADD, SETBIT, ...) mutate
+			// the payload in place and never reach DB.Set/DB.Del, so bump the key
+			// version here. Without it WATCH only ever notices string rewrites.
+			if ctx.DB != nil && len(argv) >= 2 {
+				ctx.DB.Touch(string(argv[1]))
+			}
 			if ctx.AOF != nil {
 				feedCommand(ctx.AOF, cmd.Name, argv, reply)
 			}
@@ -287,7 +293,31 @@ func SimpleString(s string) []byte {
 	return []byte("+" + s + "\r\n")
 }
 
+// errorCodes are the RESP error prefixes a caller may already have baked into the
+// message it passes to Error. Without this check they would come back out as
+// "-ERR WRONGTYPE ..." or "-ERR ERR ...", neither of which a client can classify.
+var errorCodes = map[string]struct{}{
+	"ERR": {}, "WRONGTYPE": {}, "NOSCRIPT": {}, "NOPERM": {}, "NOAUTH": {},
+	"NOGROUP": {}, "BUSYGROUP": {}, "BUSYKEY": {}, "EXECABORT": {}, "LOADING": {},
+	"MASTERDOWN": {}, "MISCONF": {}, "NOREPLICAS": {}, "OOM": {}, "READONLY": {},
+	"CROSSSLOT": {}, "MOVED": {}, "ASK": {}, "TRYAGAIN": {}, "CLUSTERDOWN": {},
+	"NOTBUSY": {}, "UNBLOCKED": {}, "BUSY": {},
+}
+
+// hasErrorCode reports whether msg already starts with one of errorCodes.
+func hasErrorCode(msg string) bool {
+	i := strings.IndexByte(msg, ' ')
+	if i <= 0 {
+		i = len(msg)
+	}
+	_, ok := errorCodes[msg[:i]]
+	return ok
+}
+
 func Error(msg string) []byte {
+	if hasErrorCode(msg) {
+		return []byte("-" + msg + "\r\n")
+	}
 	return []byte("-ERR " + msg + "\r\n")
 }
 

@@ -83,6 +83,9 @@ func geoaddCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("syntax error in GEOADD")
 	}
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	zs, _, errReply := getOrCreateZSet(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -141,7 +144,7 @@ func geodistCommand(ctx *Context, argv [][]byte) []byte {
 		unit = string(argv[4])
 	}
 
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -169,7 +172,7 @@ func geodistCommand(ctx *Context, argv [][]byte) []byte {
 
 func geoposCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -199,7 +202,7 @@ func geoposCommand(ctx *Context, argv [][]byte) []byte {
 
 func geohashCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -254,7 +257,7 @@ func georadiusbymemberCommand(ctx *Context, argv [][]byte) []byte {
 	}
 	unit := string(argv[4])
 
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -287,7 +290,7 @@ func geosearchCommand(ctx *Context, argv [][]byte) []byte {
 			idx++
 			member := string(argv[idx])
 			idx++
-			zs, _, errReply := getOrCreateZSet(ctx, key)
+			zs, errReply := getZSetForRead(ctx, key)
 			if errReply != nil {
 				return errReply
 			}
@@ -380,7 +383,7 @@ func performGeoRadius(ctx *Context, key string, lon, lat, radius float64, unit s
 		}
 	}
 
-	zs, _, errReply := getOrCreateZSet(ctx, key)
+	zs, errReply := getZSetForRead(ctx, key)
 	if errReply != nil {
 		return errReply
 	}

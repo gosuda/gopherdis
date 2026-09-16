@@ -240,10 +240,10 @@ func (s *Server) handleConnection(conn net.Conn) {
 			if len(argv) >= 3 {
 				offset, _ = strconv.ParseInt(string(argv[2]), 10, 64)
 			}
-			session := s.Replication.RegisterReplica()
+			// HandlePSync registers the replica itself, inside the same critical
+			// section as the snapshot, so nothing can be both snapshotted and queued.
+			session, header, payload, err := s.Replication.HandlePSync(replID, offset)
 			defer s.Replication.UnregisterReplica(session)
-
-			header, payload, err := s.Replication.HandlePSync(session, replID, offset)
 			if err != nil {
 				writeMu.Lock()
 				writeError(writer, err.Error())
@@ -258,14 +258,28 @@ func (s *Server) handleConnection(conn net.Conn) {
 			writer.Flush()
 			writeMu.Unlock()
 
-			// Stream write commands continuously to this replica
-			for msg := range session.MsgCh {
-				writeMu.Lock()
-				_, _ = writer.Write(msg)
-				_ = writer.Flush()
-				writeMu.Unlock()
+			// Stream write commands continuously to this replica. Bail out on a
+			// write error or when the master drops the session; ranging over MsgCh
+			// alone never terminated, so every dead replica leaked this goroutine.
+			for {
+				select {
+				case msg, ok := <-session.MsgCh:
+					if !ok {
+						return
+					}
+					writeMu.Lock()
+					_, werr := writer.Write(msg)
+					if werr == nil {
+						werr = writer.Flush()
+					}
+					writeMu.Unlock()
+					if werr != nil {
+						return
+					}
+				case <-session.Done:
+					return
+				}
 			}
-			return
 		}
 
 		cmdName := strings.ToLower(string(argv[0]))
