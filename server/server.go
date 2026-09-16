@@ -13,6 +13,7 @@ import (
 
 	"github.com/gosuda/beaver/pure"
 	"github.com/gosuda/gopherdis/acl"
+	"github.com/gosuda/gopherdis/aof"
 	"github.com/gosuda/gopherdis/cluster"
 	"github.com/gosuda/gopherdis/commands"
 	"github.com/gosuda/gopherdis/db"
@@ -21,7 +22,6 @@ import (
 	"github.com/gosuda/gopherdis/replication"
 	"github.com/gosuda/gopherdis/scripting"
 )
-
 
 // Server is a Redis-compatible in-memory TCP server.
 type Server struct {
@@ -36,11 +36,32 @@ type Server struct {
 	Cluster     *cluster.ClusterManager
 	listener    net.Listener
 	arenaPool   *pure.Pool
+	aof         *aof.AOF // concrete handle for shutdown; AOF above is the feeder
 	mu          sync.Mutex
 	closed      bool
 }
 
 // NewServer initializes a new Server with a ShardedDB, default command table, and Beaver Arena pool.
+// EnableAOF opens an append-only file at path, replays whatever is already in
+// it into the database, and wires it up so every accepted write is appended.
+//
+// It must be called before Listen. Replay happens on the calling goroutine, so
+// the server does not start serving from an empty keyspace while the AOF is
+// still loading.
+func (s *Server) EnableAOF(path string, policy aof.FsyncPolicy) error {
+	a, err := aof.OpenAOF(path, policy)
+	if err != nil {
+		return fmt.Errorf("open aof %s: %w", path, err)
+	}
+	if err := a.Load(s.DB); err != nil {
+		a.Close()
+		return fmt.Errorf("replay aof %s: %w", path, err)
+	}
+	s.aof = a
+	s.AOF = a
+	return nil
+}
+
 func NewServer() *Server {
 	database := db.NewShardedDB()
 	return &Server{
@@ -144,12 +165,16 @@ func (s *Server) Close() error {
 	defer s.mu.Unlock()
 	s.closed = true
 	s.DB.StopCron()
+	// Flush and fsync before the process goes away, otherwise the writes still
+	// sitting in the double buffer are lost on shutdown.
+	if s.aof != nil {
+		_ = s.aof.Close()
+	}
 	if s.listener != nil {
 		return s.listener.Close()
 	}
 	return nil
 }
-
 
 // handleConnection handles an individual client TCP connection lifecycle.
 func (s *Server) handleConnection(conn net.Conn) {
@@ -326,4 +351,3 @@ func errorsIsClosed(err error) bool {
 	}
 	return strings.Contains(err.Error(), "use of closed network connection")
 }
-
