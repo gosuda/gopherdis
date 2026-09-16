@@ -57,6 +57,9 @@ func setbitCommand(ctx *Context, argv [][]byte) []byte {
 	byteIdx := int(offset / 8)
 	bitIdx := 7 - (offset % 8)
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, exists := ctx.DB.Get(key)
 	if exists && obj != nil {
 		if obj.Type != object.OBJ_STRING {
@@ -84,7 +87,10 @@ func setbitCommand(ctx *Context, argv [][]byte) []byte {
 
 	newBytes, oldBit := bitmap.SetBit(rawBytes, offset, val)
 	if exists && obj != nil {
-		obj.Ptr = newBytes
+		// Publish the grown buffer through the shard lock rather than assigning
+		// obj.Ptr directly: Ptr is a two-word interface and a reader that is
+		// type-asserting it concurrently can otherwise observe a torn value.
+		_ = ctx.DB.SetKeepTTL(key, object.CreateObject(object.OBJ_STRING, newBytes))
 	} else {
 		_ = ctx.DB.Set(key, object.CreateRawStringObject(newBytes))
 	}
@@ -223,6 +229,9 @@ func bitopCommand(ctx *Context, argv [][]byte) []byte {
 			srcs = append(srcs, []byte{})
 		}
 	}
+
+	ctx.DB.LockKey(destKey)
+	defer ctx.DB.UnlockKey(destKey)
 
 	dst := bitmap.BitOp(op, srcs)
 	if len(dst) > 0 {

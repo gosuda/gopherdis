@@ -2,6 +2,7 @@ package commands
 
 import (
 	"bytes"
+	"math"
 	"strconv"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
@@ -134,6 +135,9 @@ func hsetCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("wrong number of arguments for 'hset' command")
 	}
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	d, _, errReply := getOrCreateHash(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -168,6 +172,10 @@ func hgetCommand(ctx *Context, argv [][]byte) []byte {
 
 func hdelCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	d, errReply := getHash(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -335,6 +343,9 @@ func hincrbyCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("value is not an integer or out of range")
 	}
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	d, _, errReply := getOrCreateHash(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -347,6 +358,10 @@ func hincrbyCommand(ctx *Context, argv [][]byte) []byte {
 			return Error("hash value is not an integer")
 		}
 		curVal = parsed
+	}
+
+	if (incr > 0 && curVal > math.MaxInt64-incr) || (incr < 0 && curVal < math.MinInt64-incr) {
+		return Error("increment or decrement would overflow")
 	}
 
 	newVal := curVal + incr

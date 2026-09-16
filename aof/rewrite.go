@@ -8,7 +8,9 @@ import (
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
+	"github.com/gosuda/gopherdis/datastruct/stream"
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/object"
 )
@@ -74,14 +76,44 @@ func writeEntryToRESP(w io.Writer, entry db.DBEntry) error {
 		}
 
 	case object.OBJ_SET:
-		smap, ok := obj.Ptr.(map[string]struct{})
-		if ok && len(smap) > 0 {
-			argv := make([][]byte, 0, len(smap)+2)
+		// Commands store sets as *set.Set; matching only the bare map dropped every
+		// set from the rewritten AOF.
+		var members []string
+		switch v := obj.Ptr.(type) {
+		case *set.Set:
+			if v != nil {
+				members = v.Members()
+			}
+		case map[string]struct{}:
+			members = make([]string, 0, len(v))
+			for mem := range v {
+				members = append(members, mem)
+			}
+		}
+		if len(members) > 0 {
+			argv := make([][]byte, 0, len(members)+2)
 			argv = append(argv, []byte("SADD"), []byte(key))
-			for mem := range smap {
+			for _, mem := range members {
 				argv = append(argv, []byte(mem))
 			}
 			cmds = append(cmds, argv)
+		}
+
+	case object.OBJ_STREAM:
+		// Streams have no RDB opcode here, so the AOF is their only persistence
+		// path: replay them as the XADDs that produced them.
+		if st, ok := obj.Ptr.(*stream.Stream); ok && st != nil {
+			for _, e := range st.Range(stream.ZeroID, stream.MaxID, 0, false) {
+				argv := make([][]byte, 0, len(e.Fields)*2+3)
+				argv = append(argv, []byte("XADD"), []byte(key), []byte(e.ID.String()))
+				for i, f := range e.Fields {
+					if i >= len(e.Values) {
+						break
+					}
+					argv = append(argv, []byte(f), e.Values[i])
+				}
+				cmds = append(cmds, argv)
+			}
 		}
 
 	case object.OBJ_ZSET:

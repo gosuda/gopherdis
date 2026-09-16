@@ -108,6 +108,8 @@ func xaddCommand(ctx *Context, argv [][]byte) []byte {
 	maxLen := int64(0)
 	approx := false
 	nomkstream := false
+	var minID stream.StreamID
+	hasMinID := false
 
 	// Parse options (NOMKSTREAM, MAXLEN, MINID)
 	for idx < len(argv) {
@@ -116,6 +118,7 @@ func xaddCommand(ctx *Context, argv [][]byte) []byte {
 			nomkstream = true
 			idx++
 		} else if opt == "MAXLEN" || opt == "MINID" {
+			isMinID := opt == "MINID"
 			idx++
 			if idx < len(argv) && (string(argv[idx]) == "=" || string(argv[idx]) == "~") {
 				if string(argv[idx]) == "~" {
@@ -125,6 +128,18 @@ func xaddCommand(ctx *Context, argv [][]byte) []byte {
 			}
 			if idx >= len(argv) {
 				return Error("syntax error in XADD")
+			}
+			if isMinID {
+				// MINID takes a stream ID, not a count. Parsing it as MAXLEN made
+				// "MINID 1700000000000" trim the stream down to its last N entries.
+				id, err := stream.ParseID(string(argv[idx]), stream.ZeroID)
+				if err != nil {
+					return Error(err.Error())
+				}
+				minID = id
+				hasMinID = true
+				idx++
+				continue
 			}
 			lim, err := strconv.ParseInt(string(argv[idx]), 10, 64)
 			if err != nil {
@@ -149,6 +164,9 @@ func xaddCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("wrong number of arguments for 'xadd' command")
 	}
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	s, errReply := getOrCreateStream(ctx, key, !nomkstream)
 	if errReply != nil {
 		return errReply
@@ -168,7 +186,26 @@ func xaddCommand(ctx *Context, argv [][]byte) []byte {
 		return Error(err.Error())
 	}
 
+	if hasMinID {
+		trimBelowMinID(s, minID)
+	}
+
 	return BulkString([]byte(addedID.String()))
+}
+
+// trimBelowMinID evicts every entry with an ID strictly smaller than minID,
+// implementing the MINID trimming strategy of XADD/XTRIM.
+func trimBelowMinID(s *stream.Stream, minID stream.StreamID) {
+	old := s.Range(stream.ZeroID, minID, 0, false)
+	ids := make([]stream.StreamID, 0, len(old))
+	for _, e := range old {
+		if e.ID.Compare(minID) < 0 {
+			ids = append(ids, e.ID)
+		}
+	}
+	if len(ids) > 0 {
+		s.Delete(ids)
+	}
 }
 
 func xrangeCommand(ctx *Context, argv [][]byte) []byte {
@@ -253,6 +290,10 @@ func xlenCommand(ctx *Context, argv [][]byte) []byte {
 
 func xdelCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	s, errReply := getOrCreateStream(ctx, key, false)
 	if errReply != nil {
 		return errReply
@@ -292,6 +333,28 @@ func xtrimCommand(ctx *Context, argv [][]byte) []byte {
 	}
 	if idx >= len(argv) {
 		return Error("syntax error in XTRIM")
+	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
+	if opt == "MINID" {
+		// MINID's argument is a stream ID; parsing it as a MAXLEN count trimmed
+		// the stream to a length instead of to a lower ID bound.
+		minID, err := stream.ParseID(string(argv[idx]), stream.ZeroID)
+		if err != nil {
+			return Error(err.Error())
+		}
+		s, errReply := getOrCreateStream(ctx, key, false)
+		if errReply != nil {
+			return errReply
+		}
+		if s == nil {
+			return Integer(0)
+		}
+		before := s.Len()
+		trimBelowMinID(s, minID)
+		return Integer(before - s.Len())
 	}
 
 	lim, err := strconv.ParseInt(string(argv[idx]), 10, 64)
@@ -362,6 +425,11 @@ func xgroupCommand(ctx *Context, argv [][]byte) []byte {
 		return Error(fmt.Sprintf("unknown subcommand '%s'", subCmd))
 	}
 }
+
+// blockPollInterval is how often a blocked XREAD rechecks its streams. Polling
+// covers the keys past keys[0], which have no registered waiter, and streams that
+// do not exist yet.
+const blockPollInterval = 20 * time.Millisecond
 
 func xreadCommand(ctx *Context, argv [][]byte) []byte {
 	idx := 1
@@ -460,28 +528,64 @@ func xreadCommand(ctx *Context, argv [][]byte) []byte {
 		return Array(results)
 	}
 
-	// Handle BLOCK wait
-	s, _ := getOrCreateStream(ctx, keys[0], true)
-	if s == nil {
-		return Array(nil)
+	// Handle BLOCK wait.
+	//
+	// Do not create the stream: XREAD is a read and must not leave a phantom key
+	// behind. When the key does not exist yet there is no waiter to register on,
+	// so fall back to polling, which also covers the streams other than keys[0]
+	// that the single registered waiter never sees.
+	var wakeCh <-chan struct{}
+	if s, _ := getOrCreateStream(ctx, keys[0], false); s != nil {
+		waiter := s.RegisterWaiter()
+		defer s.UnregisterWaiter(waiter)
+		wakeCh = waiter.WakeCh
 	}
-	waiter := s.RegisterWaiter()
-	defer s.UnregisterWaiter(waiter)
 
-	timeout := time.Duration(blockMs) * time.Millisecond
-	if blockMs == 0 {
-		timeout = 10 * time.Minute
+	// The operation lock must not be held while parked. It is the same lock
+	// EXEC/EVAL take exclusively, so blocking here with it held stalls every
+	// transaction on the server for the whole BLOCK duration.
+	opLocked := ctx != nil && ctx.DB != nil && !ctx.InTxExecution
+	if opLocked {
+		ctx.DB.EndOp()
+		defer ctx.DB.BeginOp() // Execute's own deferred EndOp still has to pair up
 	}
 
-	select {
-	case <-waiter.WakeCh:
-		results = fetch()
-		if len(results) == 0 {
-			return Array(nil)
+	lockedFetch := func() [][]byte {
+		if opLocked {
+			ctx.DB.BeginOp()
+			defer ctx.DB.EndOp()
 		}
-		return Array(results)
-	case <-time.After(timeout):
-		return NullArray()
+		return fetch()
+	}
+
+	// BLOCK 0 means "wait forever" in Redis; a nil channel never fires.
+	var timeoutCh <-chan time.Time
+	if blockMs > 0 {
+		timer := time.NewTimer(time.Duration(blockMs) * time.Millisecond)
+		defer timer.Stop()
+		timeoutCh = timer.C
+	}
+
+	// A registered waiter only covers keys[0] and only while that stream object
+	// stays alive, so poll when it cannot be trusted on its own. A single existing
+	// stream stays purely event-driven.
+	var pollCh <-chan time.Time
+	if wakeCh == nil || len(keys) > 1 {
+		poll := time.NewTicker(blockPollInterval)
+		defer poll.Stop()
+		pollCh = poll.C
+	}
+
+	for {
+		select {
+		case <-wakeCh:
+		case <-pollCh:
+		case <-timeoutCh:
+			return NullArray()
+		}
+		if results = lockedFetch(); len(results) > 0 {
+			return Array(results)
+		}
 	}
 }
 

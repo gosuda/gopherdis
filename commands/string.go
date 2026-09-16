@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -158,6 +159,11 @@ func msetCommand(ctx *Context, argv [][]byte) []byte {
 }
 
 func incrGeneric(ctx *Context, key string, delta int64) []byte {
+	// Get -> compute -> Set is a read-modify-write: without the key lock two
+	// concurrent INCRs can both read n and both write n+1.
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	var current int64
 	if ok && obj != nil {
@@ -169,6 +175,10 @@ func incrGeneric(ctx *Context, key string, delta int64) []byte {
 			return Error("value is not an integer or out of range")
 		}
 		current = val
+	}
+
+	if (delta > 0 && current > math.MaxInt64-delta) || (delta < 0 && current < math.MinInt64-delta) {
+		return Error("increment or decrement would overflow")
 	}
 
 	newVal := current + delta
@@ -197,6 +207,10 @@ func decrbyCommand(ctx *Context, argv [][]byte) []byte {
 	if err != nil {
 		return Error("value is not an integer or out of range")
 	}
+	if delta == math.MinInt64 {
+		// -math.MinInt64 wraps back to itself, turning DECRBY into INCRBY.
+		return Error("decrement would overflow")
+	}
 	return incrGeneric(ctx, string(argv[1]), -delta)
 }
 
@@ -215,6 +229,9 @@ func strlenCommand(ctx *Context, argv [][]byte) []byte {
 func appendCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	appendBytes := argv[2]
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
 
 	obj, ok := ctx.DB.Get(key)
 	var newBytes []byte

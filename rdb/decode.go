@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/object"
@@ -267,15 +268,17 @@ func (dec *Decoder) Load(targetDB *db.ShardedDB) error {
 			if err != nil {
 				return err
 			}
-			smap := make(map[string]struct{}, count)
+			// Decode into *set.Set, the representation the SADD/SREM/... command
+			// handlers expect; a bare map would make every command WRONGTYPE.
+			s := set.New()
 			for i := uint64(0); i < count; i++ {
 				mem, err := dec.ReadString()
 				if err != nil {
 					return err
 				}
-				smap[string(mem)] = struct{}{}
+				s.Add(string(mem))
 			}
-			robj = object.CreateObject(object.OBJ_SET, smap)
+			robj = object.CreateObject(object.OBJ_SET, s)
 			robj.Encoding = object.OBJ_ENCODING_HT
 
 		case TypeHash:

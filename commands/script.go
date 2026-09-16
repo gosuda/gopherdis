@@ -163,7 +163,10 @@ func scriptCommand(ctx *Context, argv [][]byte) []byte {
 		return OK()
 
 	case "KILL":
-		return OK()
+		// There is no per-script kill switch; scripts are bounded by
+		// scripting.ScriptTimeout instead. Reply the way Redis does when nothing
+		// is killable rather than returning a +OK that did nothing.
+		return Error("NOTBUSY No scripts in execution right now.")
 
 	default:
 		return Error(fmt.Sprintf("unknown subcommand '%s'", subCmd))

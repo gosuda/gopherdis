@@ -81,6 +81,10 @@ func getOrCreateList(ctx *Context, key string) (*quicklist.Quicklist, bool, []by
 
 func lpushCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	ql, _, errReply := getOrCreateList(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -94,6 +98,10 @@ func lpushCommand(ctx *Context, argv [][]byte) []byte {
 
 func rpushCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	ql, _, errReply := getOrCreateList(ctx, key)
 	if errReply != nil {
 		return errReply
@@ -107,6 +115,10 @@ func rpushCommand(ctx *Context, argv [][]byte) []byte {
 
 func lpopCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return NullBulkString()
@@ -131,6 +143,10 @@ func lpopCommand(ctx *Context, argv [][]byte) []byte {
 
 func rpopCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return NullBulkString()

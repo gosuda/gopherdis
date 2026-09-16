@@ -3,6 +3,7 @@ package aof
 import (
 	"os"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -25,7 +26,7 @@ type DoubleBuffer struct {
 	file *os.File
 
 	stopCh  chan struct{}
-	running bool
+	running int32 // 1 while the flusher loop is live; CAS'd down by Close
 }
 
 // NewDoubleBuffer creates a new DoubleBuffer bound to an underlying file.
@@ -46,7 +47,7 @@ func NewDoubleBuffer(file *os.File, bufSize int) *DoubleBuffer {
 		maxSize:   int64(bufSize),
 		file:      file,
 		stopCh:    make(chan struct{}),
-		running:   true,
+		running:   1,
 	}
 
 	// Auto-flush ticker for micro-batching (flushes every 5ms or when buffer is full)
@@ -124,12 +125,13 @@ func (db *DoubleBuffer) flusherLoop(interval time.Duration) {
 	}
 }
 
-// Close flushes remaining bytes and stops background flusher.
+// Close flushes remaining bytes and stops background flusher. It is safe to call
+// concurrently and more than once: an unsynchronised bool let two callers both
+// reach close(stopCh), which panics on the second close.
 func (db *DoubleBuffer) Close() error {
-	if !db.running {
+	if !atomic.CompareAndSwapInt32(&db.running, 1, 0) {
 		return nil
 	}
 	close(db.stopCh)
-	db.running = false
 	return db.Flush()
 }

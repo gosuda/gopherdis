@@ -1,20 +1,28 @@
 package scripting
 
 import (
+	"context"
 	"crypto/sha1"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
 	"sync"
+	"time"
 
 	lua "github.com/yuin/gopher-lua"
 	"github.com/yuin/gopher-lua/parse"
 )
 
 var (
-	ErrNoSuchScript = errors.New("NOSCRIPT No matching script. Please use EVAL.")
+	ErrNoSuchScript  = errors.New("NOSCRIPT No matching script. Please use EVAL.")
+	ErrScriptTimeout = errors.New("BUSY Script exceeded the maximum execution time and was terminated")
 )
+
+// ScriptTimeout bounds how long one EVAL/EVALSHA may run. Scripts execute while
+// holding the database's exclusive transaction lock, so an unbounded script
+// ("while true do end") freezes every other client permanently.
+var ScriptTimeout = 5 * time.Second
 
 // CommandExecutor is a callback function allowing Lua to invoke server commands.
 type CommandExecutor func(argv [][]byte) []byte
@@ -45,7 +53,8 @@ func (e *Engine) createVM() *lua.LState {
 	L := lua.NewState(lua.Options{
 		SkipOpenLibs: false,
 	})
-	_ = L.DoString("collectgarbage('stop')")
+	// NOTE: the GC is deliberately left running. Disabling it here made every
+	// pooled VM accumulate garbage for the lifetime of the process.
 
 	redisTbl := L.NewTable()
 
@@ -251,6 +260,13 @@ func (e *Engine) EvalSHA(hash string, keys []string, args []string, exec Command
 func (e *Engine) evalProto(proto *lua.FunctionProto, keys []string, args []string, exec CommandExecutor) ([]byte, error) {
 	L := e.vmPool.Get().(*lua.LState)
 
+	// gopher-lua checks the context between VM instructions, which is what makes
+	// a runaway script interruptible at all.
+	timeoutCtx, cancel := context.WithTimeout(context.Background(), ScriptTimeout)
+	defer cancel()
+	L.SetContext(timeoutCtx)
+	timedOut := false
+
 	udVal := L.GetGlobal("__exec__")
 	var ud *lua.LUserData
 	if u, ok := udVal.(*lua.LUserData); ok {
@@ -262,8 +278,15 @@ func (e *Engine) evalProto(proto *lua.FunctionProto, keys []string, args []strin
 	ud.Value = exec
 
 	defer func() {
-		L.SetTop(0)
+		L.RemoveContext()
 		ud.Value = nil
+		if timedOut {
+			// A VM that was killed mid-instruction has an unknown stack; drop it
+			// instead of handing it to the next script.
+			L.Close()
+			return
+		}
+		L.SetTop(0)
 		e.vmPool.Put(L)
 	}()
 
@@ -306,6 +329,10 @@ func (e *Engine) evalProto(proto *lua.FunctionProto, keys []string, args []strin
 
 	err := L.PCall(0, 1, nil)
 	if err != nil {
+		if timeoutCtx.Err() != nil {
+			timedOut = true
+			return nil, ErrScriptTimeout
+		}
 		return nil, fmt.Errorf("ERR Error running script: %v", err)
 	}
 

@@ -30,6 +30,36 @@ type ShardedDB struct {
 	cronRunning    bool
 	cronMu         sync.Mutex
 	txMu           sync.RWMutex // Synchronizes transactions and single operations
+	keyLocks       [NumKeyLocks]keyLock
+}
+
+// NumKeyLocks is the size of the stripe of per-key mutexes handed out by LockKey.
+// It is larger than NumShards so that unrelated read-modify-write commands rarely
+// collide on the same stripe.
+const NumKeyLocks = 1024
+
+// keyLock is a single stripe entry, padded to a cache line so that neighbouring
+// stripes taken by different cores do not share one.
+type keyLock struct {
+	sync.Mutex
+	_ [56]byte
+}
+
+// LockKey acquires the stripe mutex guarding key. Command handlers use it to make
+// a read-modify-write sequence (INCR, HINCRBY, ZINCRBY, APPEND, the
+// "delete the key when the container became empty" tail of HDEL/LPOP/SREM/...)
+// atomic against other clients, since BeginOp only takes a shared lock.
+//
+// It sits between txMu and the shard locks in the lock hierarchy
+// (txMu -> key stripe -> shard), and it is NOT reentrant: a handler must lock
+// at most one key, and must not call another helper that locks a key.
+func (db *ShardedDB) LockKey(key string) {
+	db.keyLocks[fnv32(key)%NumKeyLocks].Lock()
+}
+
+// UnlockKey releases the stripe mutex guarding key.
+func (db *ShardedDB) UnlockKey(key string) {
+	db.keyLocks[fnv32(key)%NumKeyLocks].Unlock()
 }
 
 // NewShardedDB creates and initializes a new ShardedDB instance.
@@ -229,6 +259,29 @@ func (db *ShardedDB) SetWithExpire(key string, val *object.Robj, ttl time.Durati
 }
 
 
+// SetKeepTTL replaces a key's value while preserving any TTL already set on it.
+// Commands that rewrite a payload in place (SETBIT growing its bitmap, ...) use it
+// so the new pointer is published under the shard lock instead of being written
+// straight into a *Robj that concurrent readers are dereferencing.
+func (db *ShardedDB) SetKeepTTL(key string, val *object.Robj) error {
+	if val != nil {
+		atomic.StoreUint32(&val.Lru, uint32(time.Now().Unix()))
+	}
+	newSize := estimateObjectSize(key, val)
+
+	s := db.getShard(key)
+	s.Lock()
+	defer s.Unlock()
+
+	if old, exists := s.entries[key]; exists {
+		db.subMem(estimateObjectSize(key, old))
+	}
+	s.entries[key] = val
+	s.bumpVersion(db, key)
+	db.addMem(newSize)
+	return nil
+}
+
 // SetExpire sets or updates the TTL for an existing key.
 func (db *ShardedDB) SetExpire(key string, ttl time.Duration) bool {
 	return db.SetExpireAt(key, time.Now().UnixMilli()+ttl.Milliseconds())
@@ -332,9 +385,34 @@ func (db *ShardedDB) AddWatchers(n int64) {
 	atomic.AddInt64(&db.watchers, n)
 }
 
-// RemoveWatchers unregisters n watched keys.
+// RemoveWatchers unregisters n watched keys. Once nobody is watching anything the
+// version counters are reclaimed, otherwise the maps would keep an entry for every
+// key that was ever watched or written while a WATCH was active.
 func (db *ShardedDB) RemoveWatchers(n int64) {
-	atomic.AddInt64(&db.watchers, -n)
+	if atomic.AddInt64(&db.watchers, -n) > 0 {
+		return
+	}
+	for i := 0; i < NumShards; i++ {
+		s := &db.shards[i]
+		s.Lock()
+		if len(s.versions) > 0 {
+			s.versions = make(map[string]uint64)
+		}
+		s.Unlock()
+	}
+}
+
+// Touch bumps a key's modification version without otherwise changing it.
+// In-place container mutations (HSET, LPUSH, SADD, ZADD, XADD, SETBIT, ...) never
+// go through Set or Del, so without this WATCH would not see them at all.
+func (db *ShardedDB) Touch(key string) {
+	if atomic.LoadInt64(&db.watchers) == 0 {
+		return
+	}
+	s := db.getShard(key)
+	s.Lock()
+	s.versions[key]++
+	s.Unlock()
 }
 
 // bumpVersion increments the key's modification version, but only while any
@@ -404,9 +482,16 @@ func (db *ShardedDB) FlushAll() {
 	for i := 0; i < NumShards; i++ {
 		s := &db.shards[i]
 		s.Lock()
+		if atomic.LoadInt64(&db.watchers) > 0 {
+			// Bump instead of reset so an in-flight WATCH ... EXEC aborts.
+			for key := range s.entries {
+				s.versions[key]++
+			}
+		} else {
+			s.versions = make(map[string]uint64)
+		}
 		s.entries = make(map[string]*object.Robj)
 		s.expires = make(map[string]int64)
-		s.versions = make(map[string]uint64)
 		s.Unlock()
 	}
 	atomic.StoreInt64(&db.usedMemory, 0)

@@ -73,6 +73,24 @@ func init() {
 	})
 }
 
+// getZSetForRead resolves key to its sorted set without ever storing anything.
+// A missing key yields a detached empty ZSet so that read-only callers can share
+// the normal code path; read commands must never materialise a phantom key.
+func getZSetForRead(ctx *Context, key string) (*skiplist.ZSet, []byte) {
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return skiplist.NewZSet(), nil
+	}
+	if obj.Type != object.OBJ_ZSET {
+		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	zs, ok := obj.Ptr.(*skiplist.ZSet)
+	if !ok {
+		return nil, Error("internal zset type error")
+	}
+	return zs, nil
+}
+
 func getOrCreateZSet(ctx *Context, key string) (*skiplist.ZSet, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
@@ -100,6 +118,9 @@ func zaddCommand(ctx *Context, argv [][]byte) []byte {
 	if len(pairs)%2 != 0 {
 		return Error("syntax error")
 	}
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
 
 	zs, _, errReply := getOrCreateZSet(ctx, key)
 	if errReply != nil {
@@ -266,6 +287,10 @@ func zcardCommand(ctx *Context, argv [][]byte) []byte {
 
 func zremCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
+
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return Integer(0)
@@ -299,11 +324,15 @@ func zincrbyCommand(ctx *Context, argv [][]byte) []byte {
 	}
 	member := string(argv[3])
 
+	ctx.DB.LockKey(key)
+	defer ctx.DB.UnlockKey(key)
+
 	zs, _, errReply := getOrCreateZSet(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
 
+	// Score -> Add is a read-modify-write and needs the key lock, same as INCR.
 	currentScore, _ := zs.Score(member)
 	newScore := currentScore + delta
 	zs.Add(member, newScore)
