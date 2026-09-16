@@ -130,9 +130,13 @@ func execCommand(ctx *Context, argv [][]byte) []byte {
 	defer ctx.DB.EndTx()
 
 	// 2. CAS Verification for WATCHed keys
+	// A command that failed to queue poisons the transaction. Redis reports that
+	// as EXECABORT, which is distinct from the nil array that a WATCH conflict
+	// produces, and clients rely on the difference to tell a programming error
+	// from a lost race.
 	if ctx.Tx.DirtyCAS {
 		ctx.Tx.Reset(ctx.DB)
-		return NullArray()
+		return Error("EXECABORT Transaction discarded because of previous errors.")
 	}
 
 	for key, originalVer := range ctx.Tx.Watched {

@@ -279,3 +279,151 @@ func TestDebugSetActiveExpire(t *testing.T) {
 		t.Error("DEBUG JMAP should be accepted")
 	}
 }
+
+func TestExecAbortOnQueueError(t *testing.T) {
+	ctx := &Context{DB: db.NewShardedDB(), Tx: NewTxState()}
+
+	run(t, ctx, "MULTI")
+	run(t, ctx, "SET", "k", "v")
+	// An unknown command cannot be queued and must poison the transaction.
+	if got := run(t, ctx, "NOSUCHCOMMAND"); !strings.HasPrefix(got, "-ERR unknown command") {
+		t.Fatalf("queueing an unknown command = %q", got)
+	}
+	got := run(t, ctx, "EXEC")
+	if !strings.HasPrefix(got, "-EXECABORT ") {
+		t.Fatalf("EXEC after a queue error = %q, want EXECABORT", got)
+	}
+	if run(t, ctx, "GET", "k") != "$-1\r\n" {
+		t.Error("an aborted transaction must not have applied its commands")
+	}
+	// MULTI state has to be cleared, so a plain command works again.
+	if got := run(t, ctx, "SET", "after", "v"); got != "+OK\r\n" {
+		t.Errorf("client still in MULTI after abort: %q", got)
+	}
+
+	// A WATCH conflict is a different outcome: nil array, not EXECABORT.
+	ctx2 := &Context{DB: ctx.DB, Tx: NewTxState()}
+	other := &Context{DB: ctx.DB}
+	run(t, ctx2, "SET", "w", "1")
+	run(t, ctx2, "WATCH", "w")
+	run(t, other, "SET", "w", "2")
+	run(t, ctx2, "MULTI")
+	run(t, ctx2, "GET", "w")
+	if got := run(t, ctx2, "EXEC"); got != "*-1\r\n" {
+		t.Errorf("EXEC after a WATCH conflict = %q, want a nil array", got)
+	}
+}
+
+func TestExpireOverflowIsRejected(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "SET", "foo", "bar")
+
+	// Seconds that overflow when converted to a millisecond deadline.
+	if got := run(t, ctx, "EXPIRE", "foo", "9223370399119966"); !strings.Contains(got, "invalid expire time") {
+		t.Errorf("EXPIRE with a huge value = %q, want an invalid expire error", got)
+	}
+	if got := run(t, ctx, "SET", "foo", "bar", "EX", "9999999999999999"); !strings.Contains(got, "invalid expire time") {
+		t.Errorf("SET EX with a huge value = %q", got)
+	}
+	if got := run(t, ctx, "GETEX", "foo", "EX", "9999999999999999"); !strings.Contains(got, "invalid expire time") {
+		t.Errorf("GETEX with a huge value = %q", got)
+	}
+	if got := run(t, ctx, "GETEX", "foo", "EX", "-1"); !strings.Contains(got, "invalid expire time") {
+		t.Errorf("GETEX with a negative value = %q", got)
+	}
+	// A sane TTL still works.
+	if got := run(t, ctx, "EXPIRE", "foo", "100"); got != ":1\r\n" {
+		t.Errorf("ordinary EXPIRE = %q", got)
+	}
+}
+
+func TestZsetRangeAndPop(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "ZADD", "z", "1", "a", "2", "b", "3", "c")
+
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "1", "2"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("ZRANGEBYSCORE 1 2 = %q, want 2 members", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "(1", "3"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("exclusive min = %q, want 2 members", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "-inf", "+inf"); !strings.HasPrefix(got, "*3\r\n") {
+		t.Errorf("infinite bounds = %q, want 3 members", got)
+	}
+	if got := run(t, ctx, "ZRANGEBYSCORE", "z", "-inf", "+inf", "LIMIT", "1", "1"); !strings.HasPrefix(got, "*1\r\n") {
+		t.Errorf("LIMIT = %q, want 1 member", got)
+	}
+	if got := run(t, ctx, "ZPOPMIN", "z"); !strings.Contains(got, "a") {
+		t.Errorf("ZPOPMIN = %q, want member a", got)
+	}
+	if got := run(t, ctx, "ZPOPMAX", "z"); !strings.Contains(got, "c") {
+		t.Errorf("ZPOPMAX = %q, want member c", got)
+	}
+	if got := run(t, ctx, "ZCARD", "z"); got != ":1\r\n" {
+		t.Errorf("after pops, ZCARD = %q", got)
+	}
+
+	run(t, ctx, "ZADD", "z2", "1", "a", "2", "b", "3", "c")
+	if got := run(t, ctx, "ZREMRANGEBYSCORE", "z2", "1", "2"); got != ":2\r\n" {
+		t.Errorf("ZREMRANGEBYSCORE = %q", got)
+	}
+	if got := run(t, ctx, "ZMSCORE", "z2", "c", "gone"); !strings.Contains(got, "$-1") {
+		t.Errorf("ZMSCORE should report a nil for a missing member: %q", got)
+	}
+}
+
+func TestSortCommand(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "RPUSH", "nums", "3", "1", "2")
+
+	if got := run(t, ctx, "SORT", "nums"); !strings.HasPrefix(got, "*3\r\n$1\r\n1\r\n$1\r\n2\r\n$1\r\n3") {
+		t.Errorf("SORT = %q, want ascending", got)
+	}
+	if got := run(t, ctx, "SORT", "nums", "DESC"); !strings.Contains(got, "$1\r\n3\r\n$1\r\n2") {
+		t.Errorf("SORT DESC = %q", got)
+	}
+	if got := run(t, ctx, "SORT", "nums", "LIMIT", "0", "2"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("SORT LIMIT = %q", got)
+	}
+
+	run(t, ctx, "RPUSH", "words", "banana", "apple")
+	if got := run(t, ctx, "SORT", "words", "ALPHA"); !strings.Contains(got, "apple") {
+		t.Errorf("SORT ALPHA = %q", got)
+	}
+	if got := run(t, ctx, "SORT", "words"); !strings.Contains(got, "can't be converted") {
+		t.Errorf("numeric SORT of non-numbers should error, got %q", got)
+	}
+
+	// BY with an external weight, and STORE.
+	run(t, ctx, "MSET", "w_1", "10", "w_2", "5", "w_3", "1")
+	if got := run(t, ctx, "SORT", "nums", "BY", "w_*"); !strings.Contains(got, "$1\r\n3\r\n$1\r\n2\r\n$1\r\n1") {
+		t.Errorf("SORT BY = %q, want weight order 3,2,1", got)
+	}
+	if got := run(t, ctx, "SORT", "nums", "STORE", "dst"); got != ":3\r\n" {
+		t.Errorf("SORT STORE = %q", got)
+	}
+	if got := run(t, ctx, "LLEN", "dst"); got != ":3\r\n" {
+		t.Errorf("SORT STORE destination = %q", got)
+	}
+}
+
+func TestHashOps(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "HSET", "h", "f", "value")
+
+	if got := run(t, ctx, "HSETNX", "h", "f", "other"); got != ":0\r\n" {
+		t.Errorf("HSETNX on an existing field = %q", got)
+	}
+	if got := run(t, ctx, "HSETNX", "h", "new", "v"); got != ":1\r\n" {
+		t.Errorf("HSETNX on a new field = %q", got)
+	}
+	if got := run(t, ctx, "HSTRLEN", "h", "f"); got != ":5\r\n" {
+		t.Errorf("HSTRLEN = %q, want :5", got)
+	}
+	if got := run(t, ctx, "HSTRLEN", "h", "missing"); got != ":0\r\n" {
+		t.Errorf("HSTRLEN on a missing field = %q", got)
+	}
+	if got := run(t, ctx, "HRANDFIELD", "h", "-5"); !strings.HasPrefix(got, "*5\r\n") {
+		t.Errorf("HRANDFIELD with a negative count = %q, want 5 entries", got)
+	}
+}

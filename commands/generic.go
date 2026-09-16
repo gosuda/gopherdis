@@ -107,10 +107,32 @@ func bgsaveCommand(ctx *Context, argv [][]byte) []byte {
 	return SimpleString("Background saving started")
 }
 
+// maxExpireMillis bounds an absolute expiry so that converting seconds to
+// milliseconds cannot overflow int64. Redis rejects the conversion rather than
+// wrapping into a timestamp in the past.
+const maxExpireMillis = int64(1) << 46
+
+// validExpireSeconds reports whether a relative expiry in seconds can be
+// converted to an absolute millisecond deadline without overflowing.
+func validExpireSeconds(secs int64) bool {
+	if secs > maxExpireMillis/1000 || secs < -maxExpireMillis/1000 {
+		return false
+	}
+	return true
+}
+
+// validExpireMillis is validExpireSeconds for a relative expiry already in ms.
+func validExpireMillis(ms int64) bool {
+	return ms <= maxExpireMillis && ms >= -maxExpireMillis
+}
+
 func expireCommand(ctx *Context, argv [][]byte) []byte {
 	secs, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
+	}
+	if !validExpireSeconds(secs) {
+		return Error("invalid expire time in 'expire' command")
 	}
 	if ctx.DB.SetExpire(string(argv[1]), time.Duration(secs)*time.Second) {
 		return Integer(1)
@@ -122,6 +144,9 @@ func pexpireCommand(ctx *Context, argv [][]byte) []byte {
 	ms, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
+	}
+	if !validExpireMillis(ms) {
+		return Error("invalid expire time in 'pexpire' command")
 	}
 	if ctx.DB.SetExpire(string(argv[1]), time.Duration(ms)*time.Millisecond) {
 		return Integer(1)

@@ -276,12 +276,12 @@ func setCommand(ctx *Context, argv [][]byte) []byte {
 			}
 			switch opt {
 			case "EX":
-				if n <= 0 {
+				if n <= 0 || !validExpireSeconds(n) {
 					return Error("invalid expire time in 'set' command")
 				}
 				ttl, hasTTL = time.Duration(n)*time.Second, true
 			case "PX":
-				if n <= 0 {
+				if n <= 0 || !validExpireMillis(n) {
 					return Error("invalid expire time in 'set' command")
 				}
 				ttl, hasTTL = time.Duration(n)*time.Millisecond, true
@@ -373,7 +373,7 @@ func setexGeneric(ctx *Context, argv [][]byte, unit time.Duration) []byte {
 	if err != nil {
 		return Error("value is not an integer or out of range")
 	}
-	if n <= 0 {
+	if n <= 0 || !validExpireMillis(int64(time.Duration(n)*unit/time.Millisecond)) {
 		return Error("invalid expire time in 'setex' command")
 	}
 	ctx.DB.LockKey(key)
@@ -456,10 +456,19 @@ func getexCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		switch opt {
 		case "EX":
+			if n <= 0 || !validExpireSeconds(n) {
+				return Error("invalid expire time in 'getex' command")
+			}
 			ctx.DB.SetExpire(key, time.Duration(n)*time.Second)
 		case "PX":
+			if n <= 0 || !validExpireMillis(n) {
+				return Error("invalid expire time in 'getex' command")
+			}
 			ctx.DB.SetExpire(key, time.Duration(n)*time.Millisecond)
 		case "EXAT":
+			if !validExpireMillis(n * 1000) {
+				return Error("invalid expire time in 'getex' command")
+			}
 			ctx.DB.SetExpireAt(key, n*1000)
 		case "PXAT":
 			ctx.DB.SetExpireAt(key, n)
