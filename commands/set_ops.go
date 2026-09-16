@@ -25,25 +25,8 @@ func init() {
 	reg("srandmember", srandmemberCommand, -2, FlagReadOnly)
 }
 
-// getSet resolves a set without creating it. A missing key reads as empty,
-// which is what the set algebra commands expect.
-func getSet(ctx *Context, key string) (*set.Set, []byte) {
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return nil, nil
-	}
-	if obj.Type != object.OBJ_SET {
-		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return nil, Error("internal set type error")
-	}
-	return s, nil
-}
-
 func smismemberCommand(ctx *Context, argv [][]byte) []byte {
-	s, errReply := getSet(ctx, string(argv[1]))
+	s, errReply := getSetView(ctx, string(argv[1]))
 	if errReply != nil {
 		return errReply
 	}
@@ -60,9 +43,9 @@ func smismemberCommand(ctx *Context, argv [][]byte) []byte {
 
 // setOp computes the union, intersection or difference of the given keys.
 func setOp(ctx *Context, keys [][]byte, op string, limit int) ([]string, []byte) {
-	sets := make([]*set.Set, 0, len(keys))
+	sets := make([]*setView, 0, len(keys))
 	for _, k := range keys {
-		s, errReply := getSet(ctx, string(k))
+		s, errReply := getSetView(ctx, string(k))
 		if errReply != nil {
 			return nil, errReply
 		}
@@ -233,7 +216,7 @@ func smoveCommand(ctx *Context, argv [][]byte) []byte {
 		ctx.DB.UnlockKey(first)
 	}()
 
-	srcSet, errReply := getSet(ctx, src)
+	srcSet, errReply := getSetView(ctx, src)
 	if errReply != nil {
 		return errReply
 	}
@@ -258,7 +241,7 @@ func smoveCommand(ctx *Context, argv [][]byte) []byte {
 
 func srandmemberCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	s, errReply := getSet(ctx, key)
+	s, errReply := getSetView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}

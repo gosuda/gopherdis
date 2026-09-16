@@ -4,6 +4,7 @@ import (
 	"bytes"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/intset"
 	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
@@ -45,6 +46,13 @@ func cloneContainer(obj *object.Robj) (*object.Robj, bool) {
 			ql.RPush(bytes.Clone(item))
 		}
 		return &object.Robj{Type: obj.Type, Encoding: obj.Encoding, Ptr: ql}, true
+
+	case *intset.IntSet:
+		is := intset.New()
+		for _, n := range v.Values() {
+			is.Add(n)
+		}
+		return &object.Robj{Type: obj.Type, Encoding: obj.Encoding, Ptr: is}, true
 
 	case *set.Set:
 		s := set.New()

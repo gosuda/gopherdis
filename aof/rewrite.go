@@ -7,6 +7,7 @@ import (
 	"strconv"
 
 	"github.com/gosuda/gopherdis/datastruct/dict"
+	"github.com/gosuda/gopherdis/datastruct/intset"
 	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
@@ -86,6 +87,12 @@ func writeEntryToRESP(w io.Writer, entry db.DBEntry) error {
 		// set from the rewritten AOF.
 		var members []string
 		switch v := obj.Ptr.(type) {
+		case *intset.IntSet:
+			members = v.Members()
+		case *listpack.Listpack:
+			for _, m := range v.All() {
+				members = append(members, string(m))
+			}
 		case *set.Set:
 			if v != nil {
 				members = v.Members()

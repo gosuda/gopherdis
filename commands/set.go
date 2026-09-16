@@ -1,7 +1,7 @@
 package commands
 
 import (
-	"github.com/gosuda/gopherdis/datastruct/set"
+	"github.com/gosuda/gopherdis/datastruct/intset"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -44,25 +44,28 @@ func init() {
 	})
 }
 
-func getOrCreateSet(ctx *Context, key string) (*set.Set, bool, []byte) {
+func getOrCreateSet(ctx *Context, key string) (*setView, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		s := set.New()
-		ctx.DB.Set(key, &object.Robj{
+		// New sets start as an intset, which is what Redis does; the first
+		// non-integer member converts it.
+		is := intset.New()
+		newObj := &object.Robj{
 			Type:     object.OBJ_SET,
-			Encoding: object.OBJ_ENCODING_HT,
-			Ptr:      s,
-		})
-		return s, true, nil
+			Encoding: object.OBJ_ENCODING_INTSET,
+			Ptr:      is,
+		}
+		ctx.DB.Set(key, newObj)
+		return &setView{ctx: ctx, key: key, obj: newObj, is: is}, true, nil
 	}
 	if obj.Type != object.OBJ_SET {
 		return nil, false, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return nil, false, Error("ERR internal set type error")
+	v, errReply := newSetView(ctx, key, obj)
+	if errReply != nil {
+		return nil, false, errReply
 	}
-	return s, false, nil
+	return v, false, nil
 }
 
 func saddCommand(ctx *Context, argv [][]byte) []byte {
@@ -90,16 +93,12 @@ func sremCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	s, errReply := getSetView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if s == nil {
 		return Integer(0)
-	}
-	if obj.Type != object.OBJ_SET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return Error("ERR internal set type error")
 	}
 
 	members := make([]string, 0, len(argv)-2)
@@ -115,16 +114,12 @@ func sremCommand(ctx *Context, argv [][]byte) []byte {
 
 func smembersCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	s, errReply := getSetView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if s == nil {
 		return Array(nil)
-	}
-	if obj.Type != object.OBJ_SET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return Error("ERR internal set type error")
 	}
 
 	mems := s.Members()
@@ -139,16 +134,12 @@ func sismemberCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	member := string(argv[2])
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	s, errReply := getSetView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if s == nil {
 		return Integer(0)
-	}
-	if obj.Type != object.OBJ_SET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return Error("ERR internal set type error")
 	}
 
 	if s.Contains(member) {
@@ -159,16 +150,12 @@ func sismemberCommand(ctx *Context, argv [][]byte) []byte {
 
 func scardCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	s, errReply := getSetView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if s == nil {
 		return Integer(0)
-	}
-	if obj.Type != object.OBJ_SET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return Error("ERR internal set type error")
 	}
 	return Integer(int64(s.Card()))
 }
@@ -179,16 +166,12 @@ func spopCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	s, errReply := getSetView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if s == nil {
 		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_SET {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	s, ok := obj.Ptr.(*set.Set)
-	if !ok {
-		return Error("ERR internal set type error")
 	}
 
 	popped := s.Pop(1)
@@ -199,4 +182,16 @@ func spopCommand(ctx *Context, argv [][]byte) []byte {
 		ctx.DB.Del(key)
 	}
 	return BulkString([]byte(popped[0]))
+}
+
+// getSetView resolves a set without creating it.
+func getSetView(ctx *Context, key string) (*setView, []byte) {
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return nil, nil
+	}
+	if obj.Type != object.OBJ_SET {
+		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	return newSetView(ctx, key, obj)
 }

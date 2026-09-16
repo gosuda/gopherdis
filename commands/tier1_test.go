@@ -495,3 +495,81 @@ func TestHashEncodingTransitions(t *testing.T) {
 }
 
 const encodingEntriesProbe = 200
+
+func TestSetEncodingTransitions(t *testing.T) {
+	ctx := newCtx()
+
+	// All-integer members use intset.
+	run(t, ctx, "SADD", "ints", "1", "2", "3")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "ints"); !strings.Contains(got, "intset") {
+		t.Fatalf("an all-integer set should be intset, got %q", got)
+	}
+	// Members come back as integers, not as whatever was typed.
+	if got := run(t, ctx, "SISMEMBER", "ints", "2"); got != ":1\r\n" {
+		t.Errorf("SISMEMBER on an intset = %q", got)
+	}
+
+	// A non-integer member converts to listpack and keeps everything.
+	run(t, ctx, "SADD", "ints", "abc")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "ints"); !strings.Contains(got, "listpack") {
+		t.Fatalf("a mixed set should be listpack, got %q", got)
+	}
+	if got := run(t, ctx, "SCARD", "ints"); got != ":4\r\n" {
+		t.Errorf("conversion lost members: SCARD = %q", got)
+	}
+	for _, m := range []string{"1", "2", "3", "abc"} {
+		if got := run(t, ctx, "SISMEMBER", "ints", m); got != ":1\r\n" {
+			t.Errorf("member %q lost across conversion: %q", m, got)
+		}
+	}
+
+	// An oversized member goes straight to a hash table.
+	run(t, ctx, "SADD", "big", strings.Repeat("x", 100))
+	if got := run(t, ctx, "OBJECT", "ENCODING", "big"); !strings.Contains(got, "hashtable") {
+		t.Errorf("an oversized member should force hashtable, got %q", got)
+	}
+
+	// Crossing the entry threshold converts too.
+	run(t, ctx, "CONFIG", "SET", "set-max-listpack-entries", "3")
+	run(t, ctx, "SADD", "t", "a", "b")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "t"); !strings.Contains(got, "listpack") {
+		t.Errorf("below the threshold should stay listpack, got %q", got)
+	}
+	run(t, ctx, "SADD", "t", "c", "d")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "t"); !strings.Contains(got, "hashtable") {
+		t.Errorf("above the threshold should be hashtable, got %q", got)
+	}
+	if got := run(t, ctx, "SCARD", "t"); got != ":4\r\n" {
+		t.Errorf("SCARD after conversion = %q", got)
+	}
+	run(t, ctx, "CONFIG", "SET", "set-max-listpack-entries", "128")
+}
+
+// TestSetAlgebraAcrossEncodings checks the set operations still work when the
+// operands are stored differently from each other.
+func TestSetAlgebraAcrossEncodings(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "SADD", "a", "1", "2", "3")            // intset
+	run(t, ctx, "SADD", "b", "2", "3", "x")            // listpack
+	run(t, ctx, "SADD", "c", strings.Repeat("y", 100)) // hashtable
+	run(t, ctx, "SADD", "c", "3")
+
+	if got := run(t, ctx, "SINTER", "a", "b"); !strings.HasPrefix(got, "*2\r\n") {
+		t.Errorf("SINTER across intset and listpack = %q, want 2", got)
+	}
+	if got := run(t, ctx, "SINTER", "a", "c"); !strings.HasPrefix(got, "*1\r\n") {
+		t.Errorf("SINTER across intset and hashtable = %q, want 1", got)
+	}
+	if got := run(t, ctx, "SUNION", "a", "b"); !strings.HasPrefix(got, "*4\r\n") {
+		t.Errorf("SUNION = %q, want 4", got)
+	}
+	if got := run(t, ctx, "SDIFF", "a", "b"); !strings.HasPrefix(got, "*1\r\n") {
+		t.Errorf("SDIFF = %q, want 1", got)
+	}
+	if got := run(t, ctx, "SMOVE", "a", "b", "1"); got != ":1\r\n" {
+		t.Errorf("SMOVE across encodings = %q", got)
+	}
+	if got := run(t, ctx, "SISMEMBER", "b", "1"); got != ":1\r\n" {
+		t.Errorf("SMOVE did not land: %q", got)
+	}
+}
