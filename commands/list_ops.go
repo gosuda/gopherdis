@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -23,39 +22,20 @@ func init() {
 	reg("rpushx", rpushxCommand, -3, FlagWrite|FlagFast)
 }
 
-// getList resolves a list without creating it.
-func getList(ctx *Context, key string) (*quicklist.Quicklist, []byte) {
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
-		return nil, nil
-	}
-	if obj.Type != object.OBJ_LIST {
-		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return nil, Error("internal list type error")
-	}
-	return ql, nil
-}
-
 // storeList replaces a key's list with items, deleting the key when empty.
-// The quicklist has no splice primitive, so the commands that reshape a list
-// rebuild it; Redis' own LTRIM, LREM and LINSERT are linear as well.
+// The listpack has no splice primitive and neither does the quicklist, so the
+// commands that reshape a list rebuild it; Redis' own LTRIM, LREM and LINSERT
+// are linear as well. replaceAll picks the encoding that fits the result.
 func storeList(ctx *Context, key string, items [][]byte) {
 	if len(items) == 0 {
 		ctx.DB.Del(key)
 		return
 	}
-	ql := quicklist.NewQuicklist()
-	for _, it := range items {
-		ql.RPush(it)
+	l, _, errReply := getOrCreateList(ctx, key)
+	if errReply != nil {
+		return
 	}
-	_ = ctx.DB.SetKeepTTL(key, &object.Robj{
-		Type:     object.OBJ_LIST,
-		Encoding: object.OBJ_ENCODING_QUICKLIST,
-		Ptr:      ql,
-	})
+	l.replaceAll(items)
 }
 
 func linsertCommand(ctx *Context, argv [][]byte) []byte {
@@ -69,7 +49,7 @@ func linsertCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	ql, errReply := getList(ctx, key)
+	ql, errReply := getListView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -77,7 +57,7 @@ func linsertCommand(ctx *Context, argv [][]byte) []byte {
 		return Integer(0)
 	}
 
-	items := ql.LRange(0, -1)
+	items := ql.All()
 	idx := -1
 	for i, it := range items {
 		if bytes.Equal(it, pivot) {
@@ -111,7 +91,7 @@ func ltrimCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	ql, errReply := getList(ctx, key)
+	ql, errReply := getListView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -151,7 +131,7 @@ func lremCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	ql, errReply := getList(ctx, key)
+	ql, errReply := getListView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -159,7 +139,7 @@ func lremCommand(ctx *Context, argv [][]byte) []byte {
 		return Integer(0)
 	}
 
-	items := ql.LRange(0, -1)
+	items := ql.All()
 	// count > 0 removes from head, count < 0 from tail, 0 removes all.
 	limit := count
 	fromTail := false
@@ -234,7 +214,7 @@ func lposCommand(ctx *Context, argv [][]byte) []byte {
 		i++
 	}
 
-	ql, errReply := getList(ctx, key)
+	ql, errReply := getListView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}
@@ -245,7 +225,7 @@ func lposCommand(ctx *Context, argv [][]byte) []byte {
 		return NullBulkString()
 	}
 
-	items := ql.LRange(0, -1)
+	items := ql.All()
 	var found []int64
 	skip := rank
 	if rank < 0 {
@@ -321,7 +301,7 @@ func lmoveGeneric(ctx *Context, src, dst, from, to string) []byte {
 		ctx.DB.UnlockKey(first)
 	}()
 
-	srcList, errReply := getList(ctx, src)
+	srcList, errReply := getListView(ctx, src)
 	if errReply != nil {
 		return errReply
 	}
@@ -374,7 +354,7 @@ func pushxGeneric(ctx *Context, argv [][]byte, left bool) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	ql, errReply := getList(ctx, key)
+	ql, errReply := getListView(ctx, key)
 	if errReply != nil {
 		return errReply
 	}

@@ -159,11 +159,18 @@ func (enc *Encoder) WriteEntry(entry db.DBEntry) error {
 		return enc.WriteString(obj.Bytes())
 
 	case object.OBJ_LIST:
-		ql, ok := obj.Ptr.(*quicklist.Quicklist)
-		if !ok || ql == nil {
+		var items [][]byte
+		switch v := obj.Ptr.(type) {
+		case *listpack.Listpack:
+			items = v.All()
+		case *quicklist.Quicklist:
+			if v == nil {
+				return nil
+			}
+			items = v.LRange(0, -1)
+		default:
 			return nil
 		}
-		items := ql.LRange(0, -1)
 		if err := enc.writeByte(TypeList); err != nil {
 			return err
 		}

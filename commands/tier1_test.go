@@ -661,3 +661,82 @@ func TestZaddOptionsAndNaN(t *testing.T) {
 		t.Errorf("NX with XX should be rejected, got %q", got)
 	}
 }
+
+func TestListEncodingTransitions(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "RPUSH", "l", "a", "b", "c")
+
+	if got := run(t, ctx, "OBJECT", "ENCODING", "l"); !strings.Contains(got, "listpack") {
+		t.Fatalf("a small list should be listpack, got %q", got)
+	}
+	if got := run(t, ctx, "LRANGE", "l", "0", "-1"); !strings.Contains(got, "a\r\n$1\r\nb\r\n$1\r\nc") {
+		t.Errorf("listpack list order wrong: %q", got)
+	}
+	if got := run(t, ctx, "LINDEX", "l", "-1"); !strings.Contains(got, "c") {
+		t.Errorf("negative LINDEX on a listpack = %q", got)
+	}
+	// Pops work from both ends while compact.
+	if got := run(t, ctx, "LPOP", "l"); !strings.Contains(got, "a") {
+		t.Errorf("LPOP = %q", got)
+	}
+	if got := run(t, ctx, "RPOP", "l"); !strings.Contains(got, "c") {
+		t.Errorf("RPOP = %q", got)
+	}
+
+	// An oversized element converts to quicklist and keeps the contents.
+	run(t, ctx, "RPUSH", "big", "small")
+	run(t, ctx, "RPUSH", "big", strings.Repeat("x", 100))
+	if got := run(t, ctx, "OBJECT", "ENCODING", "big"); !strings.Contains(got, "quicklist") {
+		t.Fatalf("an oversized element should force quicklist, got %q", got)
+	}
+	if got := run(t, ctx, "LLEN", "big"); got != ":2\r\n" {
+		t.Errorf("conversion lost elements: %q", got)
+	}
+	if got := run(t, ctx, "LINDEX", "big", "0"); !strings.Contains(got, "small") {
+		t.Errorf("conversion reordered elements: %q", got)
+	}
+
+	// Crossing the entry threshold also converts, with indices intact.
+	for i := 0; i < 200; i++ {
+		run(t, ctx, "RPUSH", "many", "v"+itoa(i))
+	}
+	if got := run(t, ctx, "OBJECT", "ENCODING", "many"); !strings.Contains(got, "quicklist") {
+		t.Fatalf("a long list should be quicklist, got %q", got)
+	}
+	if got := run(t, ctx, "LINDEX", "many", "5"); !strings.Contains(got, "v5") {
+		t.Errorf("LINDEX after promotion = %q", got)
+	}
+}
+
+// TestListReshapeAcrossEncodings covers the commands that rebuild the list.
+func TestListReshapeAcrossEncodings(t *testing.T) {
+	ctx := newCtx()
+	run(t, ctx, "RPUSH", "l", "a", "b", "c", "b")
+
+	if got := run(t, ctx, "LINSERT", "l", "BEFORE", "b", "X"); got != ":5\r\n" {
+		t.Fatalf("LINSERT on a listpack = %q", got)
+	}
+	if got := run(t, ctx, "LREM", "l", "0", "b"); got != ":2\r\n" {
+		t.Fatalf("LREM = %q", got)
+	}
+	run(t, ctx, "LTRIM", "l", "0", "0")
+	if got := run(t, ctx, "LLEN", "l"); got != ":1\r\n" {
+		t.Errorf("LTRIM = %q", got)
+	}
+
+	// The same commands on a promoted list.
+	run(t, ctx, "RPUSH", "q", strings.Repeat("x", 100), "a", "b")
+	if got := run(t, ctx, "OBJECT", "ENCODING", "q"); !strings.Contains(got, "quicklist") {
+		t.Fatalf("setup: want quicklist, got %q", got)
+	}
+	if got := run(t, ctx, "LINSERT", "q", "AFTER", "a", "mid"); got != ":4\r\n" {
+		t.Errorf("LINSERT on a quicklist = %q", got)
+	}
+	if got := run(t, ctx, "LINDEX", "q", "2"); !strings.Contains(got, "mid") {
+		t.Errorf("LINSERT landed wrong: %q", got)
+	}
+	// Rebuilding keeps the oversized element, so it must stay a quicklist.
+	if got := run(t, ctx, "OBJECT", "ENCODING", "q"); !strings.Contains(got, "quicklist") {
+		t.Errorf("rebuild demoted a list holding an oversized element: %q", got)
+	}
+}

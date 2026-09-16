@@ -7,8 +7,6 @@ import (
 	"strings"
 
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
-	"github.com/gosuda/gopherdis/datastruct/set"
-	"github.com/gosuda/gopherdis/datastruct/skiplist"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -228,28 +226,47 @@ func sortCommand(ctx *Context, argv [][]byte) []byte {
 }
 
 // sortSourceElements reads the sortable elements of a list, set or sorted set.
+//
+// It dispatches on the object type rather than the payload type: lists, sets
+// and sorted sets can all be listpack backed, so the payload alone no longer
+// identifies the container.
 func sortSourceElements(ctx *Context, key string) ([]string, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
 		return nil, nil
 	}
-	switch v := obj.Ptr.(type) {
-	case *quicklist.Quicklist:
-		items := v.LRange(0, -1)
+	switch obj.Type {
+	case object.OBJ_LIST:
+		l, errReply := newListView(ctx, key, obj)
+		if errReply != nil {
+			return nil, errReply
+		}
+		items := l.All()
 		out := make([]string, 0, len(items))
 		for _, it := range items {
 			out = append(out, string(it))
 		}
 		return out, nil
-	case *set.Set:
+
+	case object.OBJ_SET:
+		v, errReply := newSetView(ctx, key, obj)
+		if errReply != nil {
+			return nil, errReply
+		}
 		return v.Members(), nil
-	case *skiplist.ZSet:
-		els := v.Range(0, -1, false)
+
+	case object.OBJ_ZSET:
+		z, errReply := newZsetView(ctx, key, obj)
+		if errReply != nil {
+			return nil, errReply
+		}
+		els := z.elements()
 		out := make([]string, 0, len(els))
 		for _, e := range els {
 			out = append(out, e.Member)
 		}
 		return out, nil
+
 	default:
 		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}

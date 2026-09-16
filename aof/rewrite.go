@@ -49,10 +49,17 @@ func writeEntryToRESP(w io.Writer, entry db.DBEntry) error {
 		})
 
 	case object.OBJ_LIST:
-		ql, ok := obj.Ptr.(*quicklist.Quicklist)
-		if ok && ql != nil && ql.Len() > 0 {
-			items := ql.LRange(0, -1)
-			if len(items) > 0 {
+		var items [][]byte
+		switch v := obj.Ptr.(type) {
+		case *listpack.Listpack:
+			items = v.All()
+		case *quicklist.Quicklist:
+			if v != nil {
+				items = v.LRange(0, -1)
+			}
+		}
+		{
+			{
 				argv := make([][]byte, 0, len(items)+2)
 				argv = append(argv, []byte("RPUSH"), []byte(key))
 				argv = append(argv, items...)

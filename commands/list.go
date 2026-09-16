@@ -3,7 +3,7 @@ package commands
 import (
 	"strconv"
 
-	"github.com/gosuda/gopherdis/datastruct/quicklist"
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -58,25 +58,27 @@ func init() {
 	})
 }
 
-func getOrCreateList(ctx *Context, key string) (*quicklist.Quicklist, bool, []byte) {
+func getOrCreateList(ctx *Context, key string) (*listView, bool, []byte) {
 	obj, ok := ctx.DB.Get(key)
 	if !ok || obj == nil {
-		ql := quicklist.NewQuicklist()
-		ctx.DB.Set(key, &object.Robj{
+		// New lists start compact, as Redis does.
+		lp := listpack.New()
+		newObj := &object.Robj{
 			Type:     object.OBJ_LIST,
-			Encoding: object.OBJ_ENCODING_QUICKLIST,
-			Ptr:      ql,
-		})
-		return ql, true, nil
+			Encoding: object.OBJ_ENCODING_LISTPACK,
+			Ptr:      lp,
+		}
+		ctx.DB.Set(key, newObj)
+		return &listView{ctx: ctx, key: key, obj: newObj, lp: lp}, true, nil
 	}
 	if obj.Type != object.OBJ_LIST {
 		return nil, false, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
 	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return nil, false, Error("ERR internal list type error")
+	l, errReply := newListView(ctx, key, obj)
+	if errReply != nil {
+		return nil, false, errReply
 	}
-	return ql, false, nil
+	return l, false, nil
 }
 
 func lpushCommand(ctx *Context, argv [][]byte) []byte {
@@ -119,16 +121,12 @@ func lpopCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 
 	val, found := ql.LPop()
@@ -147,16 +145,12 @@ func rpopCommand(ctx *Context, argv [][]byte) []byte {
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 
 	val, found := ql.RPop()
@@ -177,16 +171,12 @@ func lrangeCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("value is not an integer or out of range")
 	}
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return Array(nil)
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 
 	items := ql.LRange(start, stop)
@@ -199,16 +189,12 @@ func lrangeCommand(ctx *Context, argv [][]byte) []byte {
 
 func llenCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return Integer(0)
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 	return Integer(int64(ql.Len()))
 }
@@ -220,16 +206,12 @@ func lindexCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("value is not an integer or out of range")
 	}
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return NullBulkString()
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 
 	val, found := ql.LIndex(idx)
@@ -246,20 +228,28 @@ func lsetCommand(ctx *Context, argv [][]byte) []byte {
 		return Error("value is not an integer or out of range")
 	}
 
-	obj, ok := ctx.DB.Get(key)
-	if !ok || obj == nil {
+	ql, errReply := getListView(ctx, key)
+	if errReply != nil {
+		return errReply
+	}
+	if ql == nil {
 		return Error("no such key")
-	}
-	if obj.Type != object.OBJ_LIST {
-		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
-	}
-	ql, ok := obj.Ptr.(*quicklist.Quicklist)
-	if !ok {
-		return Error("ERR internal list type error")
 	}
 
 	if !ql.LSet(idx, argv[3]) {
 		return Error("index out of range")
 	}
 	return OK()
+}
+
+// getListView resolves a list without creating it.
+func getListView(ctx *Context, key string) (*listView, []byte) {
+	obj, ok := ctx.DB.Get(key)
+	if !ok || obj == nil {
+		return nil, nil
+	}
+	if obj.Type != object.OBJ_LIST {
+		return nil, Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	return newListView(ctx, key, obj)
 }
