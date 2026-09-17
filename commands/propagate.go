@@ -133,6 +133,11 @@ func normalizeSet(argv [][]byte, now int64) [][]byte {
 		case "NX", "XX":
 			// The outcome is already decided, so the conditional must not be
 			// re-evaluated on the replica.
+		case "IFEQ", "IFNE", "IFDEQ", "IFDNE":
+			// Same reasoning, and these carry an operand to drop with them.
+			if i+1 < len(argv) {
+				i++
+			}
 		case "GET":
 			// Affects only the reply.
 		default:

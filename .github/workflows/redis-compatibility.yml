@@ -68,6 +68,7 @@ jobs:
           - unit/quit
           - unit/keyspace
           - unit/type/set
+          - unit/type/string
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

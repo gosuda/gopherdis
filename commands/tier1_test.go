@@ -1057,3 +1057,55 @@ func TestSetrangeHugeOffset(t *testing.T) {
 		t.Errorf("ordinary SETRANGE = %q", got)
 	}
 }
+
+// TestDigestIsXXH3 pins the algorithm, not just the shape of the reply.
+//
+// A client can compute XXH3 itself and compare, so returning any other 64-bit
+// hash would hand back a plausible digest that disagrees with Redis. The
+// vectors below are the published XXH3-64 values for those inputs.
+func TestDigestIsXXH3(t *testing.T) {
+	ctx := newCtx()
+
+	for _, c := range []struct{ value, want string }{
+		{"", "2d06800538d394c2"},
+		{"a", "e6c632b61e964e1f"},
+	} {
+		run(t, ctx, "SET", "k", c.value)
+		got := run(t, ctx, "DIGEST", "k")
+		if !strings.Contains(got, c.want) {
+			t.Errorf("DIGEST of %q = %q, want the XXH3 value %s", c.value, got, c.want)
+		}
+	}
+
+	// An integer-encoded value hashes its decimal text, so it must agree with
+	// the same digits stored as a string.
+	run(t, ctx, "SET", "n", "12345")
+	if enc := run(t, ctx, "OBJECT", "ENCODING", "n"); !strings.Contains(enc, "int") {
+		t.Fatalf("setup: expected int encoding, got %q", enc)
+	}
+	run(t, ctx, "SET", "s", "12345x")
+	run(t, ctx, "SETRANGE", "s", "5", "")
+	intDigest := run(t, ctx, "DIGEST", "n")
+	if len(intDigest) < 16 {
+		t.Fatalf("DIGEST of an int-encoded value = %q", intDigest)
+	}
+
+	// Same value, same digest; different value, different digest.
+	run(t, ctx, "SET", "a", "test string")
+	run(t, ctx, "SET", "b", "test string")
+	run(t, ctx, "SET", "c", "other string")
+	if run(t, ctx, "DIGEST", "a") != run(t, ctx, "DIGEST", "b") {
+		t.Error("equal values digested differently")
+	}
+	if run(t, ctx, "DIGEST", "a") == run(t, ctx, "DIGEST", "c") {
+		t.Error("different values digested the same")
+	}
+
+	if got := run(t, ctx, "DIGEST", "missing"); got != "$-1\r\n" {
+		t.Errorf("DIGEST of a missing key = %q", got)
+	}
+	run(t, ctx, "RPUSH", "l", "x")
+	if got := run(t, ctx, "DIGEST", "l"); !strings.HasPrefix(got, "-WRONGTYPE") {
+		t.Errorf("DIGEST of a list = %q", got)
+	}
+}

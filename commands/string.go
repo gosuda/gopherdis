@@ -1,12 +1,15 @@
 package commands
 
 import (
+	"bytes"
+	"fmt"
 	"math"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/gosuda/gopherdis/object"
+	"github.com/zeebo/xxh3"
 )
 
 // maxStringLength mirrors Redis' proto-max-bulk-len ceiling for a string value.
@@ -265,12 +268,14 @@ func setCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 
 	var (
-		ttl     time.Duration
-		hasTTL  bool
-		expAt   int64
-		nx, xx  bool
-		getOld  bool
-		keepTTL bool
+		ttl         time.Duration
+		hasTTL      bool
+		expAt       int64
+		nx, xx      bool
+		getOld      bool
+		keepTTL     bool
+		compareMode string
+		compareTo   []byte
 	)
 
 	for i := 3; i < len(argv); i++ {
@@ -305,6 +310,16 @@ func setCommand(ctx *Context, argv [][]byte) []byte {
 			nx = true
 		case "XX":
 			xx = true
+		case "IFEQ", "IFNE", "IFDEQ", "IFDNE":
+			// Compare-and-set, added in Redis 8.4: the write only happens when
+			// the current value, or its digest, satisfies the comparison. Only
+			// one condition may be given.
+			if i+1 >= len(argv) || compareMode != "" {
+				return Error("syntax error")
+			}
+			compareMode = opt
+			compareTo = argv[i+1]
+			i++
 		case "GET":
 			getOld = true
 		case "KEEPTTL":
@@ -314,6 +329,11 @@ func setCommand(ctx *Context, argv [][]byte) []byte {
 		}
 	}
 	if nx && xx {
+		return Error("syntax error")
+	}
+	// The comparison conditions are part of the same mutually exclusive group
+	// as NX and XX.
+	if compareMode != "" && (nx || xx) {
 		return Error("syntax error")
 	}
 
@@ -341,7 +361,45 @@ func setCommand(ctx *Context, argv [][]byte) []byte {
 		if getOld {
 			return oldReply
 		}
-		return NullBulkString()
+		return Null(ctx)
+	}
+
+	if compareMode != "" {
+		var match bool
+		if !exists {
+			// A key that is not there cannot equal anything, so the "not equal"
+			// forms are satisfied and the "equal" forms are not.
+			match = compareMode == "IFNE" || compareMode == "IFDNE"
+		} else {
+			if old.Type != object.OBJ_STRING {
+				return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+			}
+			cur := old.Bytes()
+			switch compareMode {
+			case "IFEQ":
+				match = bytes.Equal(cur, compareTo)
+			case "IFNE":
+				match = !bytes.Equal(cur, compareTo)
+			case "IFDEQ", "IFDNE":
+				// Validated here rather than up front: a missing key short
+				// circuits before the digest is ever compared, so a malformed
+				// one is only an error when it would actually be used.
+				if !isHexDigest(compareTo) {
+					return Error("digest must be exactly 16 hexadecimal characters")
+				}
+				digest := fmt.Sprintf("%016x", xxh3.Hash(cur))
+				equal := strings.EqualFold(digest, string(compareTo))
+				match = equal == (compareMode == "IFDEQ")
+			}
+		}
+		if !match {
+			// Nothing was written, so nothing is propagated.
+			ctx.Propagate(nil)
+			if getOld {
+				return oldReply
+			}
+			return Null(ctx)
+		}
 	}
 
 	val := object.TryEncodeString(argv[2])
@@ -623,4 +681,22 @@ func appendCommand(ctx *Context, argv [][]byte) []byte {
 
 	ctx.DB.Set(key, object.CreateRawStringObject(newBytes))
 	return Integer(int64(len(newBytes)))
+}
+
+// isHexDigest reports whether b is exactly the 16 hex characters a DIGEST reply
+// consists of.
+func isHexDigest(b []byte) bool {
+	if len(b) != 16 {
+		return false
+	}
+	for _, c := range b {
+		switch {
+		case c >= '0' && c <= '9':
+		case c >= 'a' && c <= 'f':
+		case c >= 'A' && c <= 'F':
+		default:
+			return false
+		}
+	}
+	return true
 }

@@ -46,9 +46,9 @@ of the following stops holding:
   release tag rather than `unstable`, and must pass end to end. Each is also
   required to have executed a non-zero number of tests, because a unit whose
   tags exclude it in external-server mode runs nothing and still reports
-  success. Currently verified against 8.10.1: `unit/type/set` (150 tests),
-  `unit/keyspace` (46 tests), `unit/type/incr` (32 tests), `unit/quit`
-  (3 tests) and `unit/networking` (1 test).
+  success. Currently verified against 8.10.1: `unit/type/string` (179 tests),
+  `unit/type/set` (150 tests), `unit/keyspace` (46 tests), `unit/type/incr`
+  (32 tests), `unit/quit` (3 tests) and `unit/networking` (1 test).
 - **Race detector.** `go test -race ./...` across every package.
 
 The suite is run with two exclusions, both stated rather than worked around.
