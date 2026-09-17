@@ -120,18 +120,27 @@ func zrangeByScoreGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 	if count >= 0 && count < len(picked) {
 		picked = picked[:count]
 	}
-	return zsetReply(picked, withScores)
+	return zsetReply(ctx, picked, withScores)
 }
 
-func zsetReply(items []skiplist.ZSetElement, withScores bool) []byte {
-	elems := make([][]byte, 0, len(items)*2)
-	for _, el := range items {
-		elems = append(elems, BulkString([]byte(el.Member)))
-		if withScores {
-			elems = append(elems, BulkString([]byte(formatFloat(el.Score))))
+func zsetReply(ctx *Context, items []skiplist.ZSetElement, withScores bool) []byte {
+	if !withScores {
+		elems := make([][]byte, 0, len(items))
+		for _, el := range items {
+			elems = append(elems, BulkString([]byte(el.Member)))
 		}
+		return Array(elems)
 	}
-	return Array(elems)
+	// With scores, RESP3 nests each member and its score and types the score as
+	// a double, where RESP2 flattens both into one array of bulk strings.
+	pairs := make([][2][]byte, 0, len(items))
+	for _, el := range items {
+		pairs = append(pairs, [2][]byte{
+			BulkString([]byte(el.Member)),
+			Double(ctx, el.Score),
+		})
+	}
+	return PairsReply(ctx, pairs)
 }
 
 func zrangebyscoreCommand(ctx *Context, argv [][]byte) []byte {
@@ -174,7 +183,7 @@ func zpopGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 		ctx.DB.Del(key)
 	}
 	_ = explicit
-	return zsetReply(items, true)
+	return zsetReply(ctx, items, true)
 }
 
 func zpopminCommand(ctx *Context, argv [][]byte) []byte { return zpopGeneric(ctx, argv, false) }
@@ -241,9 +250,9 @@ func zmscoreCommand(ctx *Context, argv [][]byte) []byte {
 	elems := make([][]byte, 0, len(argv)-2)
 	for i := 2; i < len(argv); i++ {
 		if score, ok := zs.Score(string(argv[i])); ok {
-			elems = append(elems, BulkString([]byte(formatFloat(score))))
+			elems = append(elems, Double(ctx, score))
 		} else {
-			elems = append(elems, NullBulkString())
+			elems = append(elems, Null(ctx))
 		}
 	}
 	return Array(elems)
@@ -282,11 +291,11 @@ func zrandmemberCommand(ctx *Context, argv [][]byte) []byte {
 		for i := 0; i < count; i++ {
 			out = append(out, all[rand.Intn(len(all))])
 		}
-		return zsetReply(out, withScores)
+		return zsetReply(ctx, out, withScores)
 	}
 	if count >= len(all) {
-		return zsetReply(all, withScores)
+		return zsetReply(ctx, all, withScores)
 	}
 	rand.Shuffle(len(all), func(i, j int) { all[i], all[j] = all[j], all[i] })
-	return zsetReply(all[:count], withScores)
+	return zsetReply(ctx, all[:count], withScores)
 }

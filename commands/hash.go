@@ -67,7 +67,7 @@ func init() {
 	})
 	DefaultTable.Register(&Command{
 		Name:    "hmset",
-		Handler: hsetCommand,
+		Handler: hmsetCommand,
 		Arity:   -4,
 		Flags:   FlagFast | FlagWrite,
 	})
@@ -116,7 +116,7 @@ func hincrbyfloatCommand(ctx *Context, argv [][]byte) []byte {
 
 	formatted := formatFloat(newVal)
 	d.Set(field, []byte(formatted))
-	return BulkString([]byte(formatted))
+	return Double(ctx, newVal)
 }
 
 func getOrCreateHash(ctx *Context, key string) (*hashView, bool, []byte) {
@@ -153,11 +153,24 @@ func getHash(ctx *Context, key string) (*hashView, []byte) {
 	return newHashView(ctx, key, obj)
 }
 
+// hmsetCommand is HSET that replies +OK. The two differ only in the reply, but
+// a client that checks for OK breaks when handed an integer.
+func hmsetCommand(ctx *Context, argv [][]byte) []byte {
+	if reply := hsetGeneric(ctx, argv, "hmset"); len(reply) > 0 && reply[0] == '-' {
+		return reply
+	}
+	return OK()
+}
+
 func hsetCommand(ctx *Context, argv [][]byte) []byte {
+	return hsetGeneric(ctx, argv, "hset")
+}
+
+func hsetGeneric(ctx *Context, argv [][]byte, name string) []byte {
 	key := string(argv[1])
 	pairs := argv[2:]
 	if len(pairs)%2 != 0 {
-		return Error("wrong number of arguments for 'hset' command")
+		return Error("wrong number of arguments for '" + name + "' command")
 	}
 
 	ctx.DB.LockKey(key)
@@ -242,29 +255,15 @@ func hgetallCommand(ctx *Context, argv [][]byte) []byte {
 		return errReply
 	}
 	if d == nil || d.Len() == 0 {
-		return []byte("*0\r\n")
+		return MapReply(ctx, nil)
 	}
 
-	var buf bytes.Buffer
-	buf.Grow(d.Len() * 64)
-	buf.WriteByte('*')
-	buf.Write(strconv.AppendInt(nil, int64(d.Len()*2), 10))
-	buf.WriteString("\r\n")
-
+	// Field/value pairs are a map in RESP3, not a flat array.
+	kv := make([][]byte, 0, d.Len()*2)
 	d.ForEach(func(f string, v []byte) {
-		buf.WriteByte('$')
-		buf.Write(strconv.AppendInt(nil, int64(len(f)), 10))
-		buf.WriteString("\r\n")
-		buf.WriteString(f)
-		buf.WriteString("\r\n")
-
-		buf.WriteByte('$')
-		buf.Write(strconv.AppendInt(nil, int64(len(v)), 10))
-		buf.WriteString("\r\n")
-		buf.Write(v)
-		buf.WriteString("\r\n")
+		kv = append(kv, BulkString([]byte(f)), BulkString(v))
 	})
-	return buf.Bytes()
+	return MapReply(ctx, kv)
 }
 
 func hlenCommand(ctx *Context, argv [][]byte) []byte {

@@ -232,9 +232,9 @@ func zscoreCommand(ctx *Context, argv [][]byte) []byte {
 
 	score, ok := zs.Score(member)
 	if !ok {
-		return NullBulkString()
+		return Null(ctx)
 	}
-	return BulkString([]byte(strconv.FormatFloat(score, 'f', -1, 64)))
+	return Double(ctx, score)
 }
 
 func zrankCommand(ctx *Context, argv [][]byte) []byte {
@@ -310,7 +310,7 @@ func zrangeGeneric(ctx *Context, argv [][]byte, defaultRev bool) []byte {
 			withScores = true
 		}
 	}
-	return zsetReply(items, withScores)
+	return zsetReply(ctx, items, withScores)
 }
 
 func zcardCommand(ctx *Context, argv [][]byte) []byte {
@@ -370,7 +370,7 @@ func zincrbyCommand(ctx *Context, argv [][]byte) []byte {
 	}
 	zs.Add(member, newScore)
 
-	return BulkString([]byte(formatFloat(newScore)))
+	return Double(ctx, newScore)
 }
 
 func zcountCommand(ctx *Context, argv [][]byte) []byte {

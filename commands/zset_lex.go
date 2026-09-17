@@ -127,7 +127,7 @@ func lexGeneric(ctx *Context, argv [][]byte, reverse bool) []byte {
 	if count >= 0 && count < len(items) {
 		items = items[:count]
 	}
-	return zsetReply(items, false)
+	return zsetReply(ctx, items, false)
 }
 
 func zrangebylexCommand(ctx *Context, argv [][]byte) []byte {

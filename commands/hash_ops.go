@@ -77,15 +77,20 @@ func hrandfieldCommand(ctx *Context, argv [][]byte) []byte {
 	keys := d.Keys()
 
 	emit := func(fields []string) []byte {
-		elems := make([][]byte, 0, len(fields)*2)
-		for _, f := range fields {
-			elems = append(elems, BulkString([]byte(f)))
-			if withValues {
-				v, _ := d.Get(f)
-				elems = append(elems, BulkString(v))
+		if !withValues {
+			elems := make([][]byte, 0, len(fields))
+			for _, f := range fields {
+				elems = append(elems, BulkString([]byte(f)))
 			}
+			return Array(elems)
 		}
-		return Array(elems)
+		// WITHVALUES nests each field and value in RESP3, where RESP2 flattens.
+		pairs := make([][2][]byte, 0, len(fields))
+		for _, f := range fields {
+			v, _ := d.Get(f)
+			pairs = append(pairs, [2][]byte{BulkString([]byte(f)), BulkString(v)})
+		}
+		return PairsReply(ctx, pairs)
 	}
 
 	// A negative count may repeat fields and returns exactly |count|.

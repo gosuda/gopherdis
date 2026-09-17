@@ -127,7 +127,7 @@ func smembersCommand(ctx *Context, argv [][]byte) []byte {
 	for _, m := range mems {
 		elements = append(elements, BulkString([]byte(m)))
 	}
-	return Array(elements)
+	return SetReply(ctx, elements)
 }
 
 func sismemberCommand(ctx *Context, argv [][]byte) []byte {

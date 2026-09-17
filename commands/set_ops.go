@@ -112,12 +112,13 @@ func setOp(ctx *Context, keys [][]byte, op string, limit int) ([]string, []byte)
 	}
 }
 
-func membersReply(members []string) []byte {
+// membersReply emits set members: a set type in RESP3, an array in RESP2.
+func membersReply(ctx *Context, members []string) []byte {
 	elems := make([][]byte, 0, len(members))
 	for _, m := range members {
 		elems = append(elems, BulkString([]byte(m)))
 	}
-	return Array(elems)
+	return SetReply(ctx, elems)
 }
 
 func sinterCommand(ctx *Context, argv [][]byte) []byte {
@@ -125,7 +126,7 @@ func sinterCommand(ctx *Context, argv [][]byte) []byte {
 	if err != nil {
 		return err
 	}
-	return membersReply(m)
+	return membersReply(ctx, m)
 }
 
 func sunionCommand(ctx *Context, argv [][]byte) []byte {
@@ -133,7 +134,7 @@ func sunionCommand(ctx *Context, argv [][]byte) []byte {
 	if err != nil {
 		return err
 	}
-	return membersReply(m)
+	return membersReply(ctx, m)
 }
 
 func sdiffCommand(ctx *Context, argv [][]byte) []byte {
@@ -141,7 +142,7 @@ func sdiffCommand(ctx *Context, argv [][]byte) []byte {
 	if err != nil {
 		return err
 	}
-	return membersReply(m)
+	return membersReply(ctx, m)
 }
 
 func storeOp(ctx *Context, argv [][]byte, op string) []byte {
@@ -275,9 +276,20 @@ func srandmemberCommand(ctx *Context, argv [][]byte) []byte {
 		}
 		return Array(out)
 	}
+	// SRANDMEMBER is an array even in RESP3, since it may repeat members.
 	if count >= len(members) {
-		return membersReply(members)
+		return arrayOfBulk(members)
 	}
 	rand.Shuffle(len(members), func(i, j int) { members[i], members[j] = members[j], members[i] })
-	return membersReply(members[:count])
+	return arrayOfBulk(members[:count])
+}
+
+// arrayOfBulk emits members as a plain array, for the commands that stay arrays
+// in RESP3 because they may contain duplicates.
+func arrayOfBulk(members []string) []byte {
+	elems := make([][]byte, 0, len(members))
+	for _, m := range members {
+		elems = append(elems, BulkString([]byte(m)))
+	}
+	return Array(elems)
 }

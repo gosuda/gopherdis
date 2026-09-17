@@ -340,7 +340,7 @@ func zsetReadGeneric(ctx *Context, argv [][]byte, op string) []byte {
 	if errReply != nil {
 		return errReply
 	}
-	return zsetReply(items, args.withScore)
+	return zsetReply(ctx, items, args.withScore)
 }
 
 func zunionCommand(ctx *Context, argv [][]byte) []byte { return zsetReadGeneric(ctx, argv, "union") }

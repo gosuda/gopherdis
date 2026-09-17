@@ -67,7 +67,15 @@ type Context struct {
 	Scripting     *scripting.Engine
 	Cluster       *cluster.ClusterManager
 	InTxExecution bool
+
+	// Proto is the RESP version this connection negotiated with HELLO. It is 2
+	// unless the client asked for 3, and it decides which of the reply shapes
+	// below a command emits.
+	Proto int
 }
+
+// resp3 reports whether this connection negotiated RESP3.
+func (c *Context) resp3() bool { return c != nil && c.Proto == 3 }
 
 // CommandHandler is the signature for command execution functions.
 type CommandHandler func(ctx *Context, argv [][]byte) []byte
@@ -296,7 +304,8 @@ var errorCodes = map[string]struct{}{
 	"NOGROUP": {}, "BUSYGROUP": {}, "BUSYKEY": {}, "EXECABORT": {}, "LOADING": {},
 	"MASTERDOWN": {}, "MISCONF": {}, "NOREPLICAS": {}, "OOM": {}, "READONLY": {},
 	"CROSSSLOT": {}, "MOVED": {}, "ASK": {}, "TRYAGAIN": {}, "CLUSTERDOWN": {},
-	"NOTBUSY": {}, "UNBLOCKED": {}, "BUSY": {},
+	"NOTBUSY": {}, "UNBLOCKED": {}, "BUSY": {}, "NOPROTO": {}, "WRONGPASS": {},
+	"NOMASTERLINK": {}, "NOTFOUND": {}, "INPROG": {},
 }
 
 // hasErrorCode reports whether msg already starts with one of errorCodes.

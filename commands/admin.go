@@ -162,6 +162,11 @@ func helloCommand(ctx *Context, argv [][]byte) []byte {
 		proto = ver
 		idx = 2
 	}
+	// Record it: without this the handshake succeeds and every later reply is
+	// still encoded as RESP2, which a RESP3 client cannot decode.
+	if ctx != nil {
+		ctx.Proto = proto
+	}
 
 	for idx < len(argv) {
 		opt := strings.ToUpper(string(argv[idx]))
@@ -487,7 +492,7 @@ func configCommand(ctx *Context, argv [][]byte) []byte {
 				}
 			}
 		}
-		return Array(replies)
+		return MapReply(ctx, replies)
 
 	case "SET":
 		if len(argv) < 4 {

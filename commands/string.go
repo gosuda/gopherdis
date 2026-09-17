@@ -236,7 +236,7 @@ func incrbyfloatCommand(ctx *Context, argv [][]byte) []byte {
 
 	formatted := formatFloat(newVal)
 	ctx.DB.Set(key, object.CreateStringObject(formatted))
-	return BulkString([]byte(formatted))
+	return Double(ctx, newVal)
 }
 
 func getCommand(ctx *Context, argv [][]byte) []byte {
