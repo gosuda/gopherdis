@@ -72,6 +72,22 @@ type Context struct {
 	// unless the client asked for 3, and it decides which of the reply shapes
 	// below a command emits.
 	Proto int
+
+	// propagate lets a handler replace what reaches the AOF and replicas.
+	// A non-deterministic command cannot be replayed as itself: SPOP would pop
+	// different members on a replica, so it propagates the effect it had.
+	propagate    [][]byte
+	propagateSet bool
+}
+
+// Propagate replaces what this command sends to the AOF and to replicas.
+// Passing nil propagates nothing.
+func (c *Context) Propagate(argv [][]byte) {
+	if c == nil {
+		return
+	}
+	c.propagate = argv
+	c.propagateSet = true
 }
 
 // resp3 reports whether this connection negotiated RESP3.
@@ -243,6 +259,10 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 		}
 	}
 
+	if ctx != nil {
+		ctx.propagate, ctx.propagateSet = nil, false
+	}
+
 	reply := cmd.Handler(ctx, argv)
 
 	// Intercept write commands for automatic AOF & Replication feeding
@@ -260,7 +280,13 @@ func (t *Table) Execute(ctx *Context, argv [][]byte) []byte {
 			// and a relative TTL replayed later resolves to a later deadline
 			// than the one the master applied.
 			if ctx.AOF != nil || ctx.Replication != nil {
-				if out := normalizeForPropagation(cmd.Name, argv, reply); out != nil {
+				out := normalizeForPropagation(cmd.Name, argv, reply)
+				if ctx.propagateSet {
+					// The handler knows what actually happened; trust it over
+					// the generic rewrite.
+					out = ctx.propagate
+				}
+				if out != nil {
 					if ctx.AOF != nil {
 						ctx.AOF.Feed(out)
 					}

@@ -5,7 +5,6 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/object"
 )
 
@@ -161,13 +160,15 @@ func storeOp(ctx *Context, argv [][]byte, op string) []byte {
 		ctx.DB.Del(dst)
 		return Integer(0)
 	}
-	s := set.New()
-	s.Add(members...)
-	_ = ctx.DB.Set(dst, &object.Robj{
-		Type:     object.OBJ_SET,
-		Encoding: object.OBJ_ENCODING_HT,
-		Ptr:      s,
-	})
+	// Build through the view so the destination lands on whichever encoding its
+	// contents call for. Storing a hash set unconditionally made every STORE
+	// result report hashtable, even for a handful of integers.
+	ctx.DB.Del(dst)
+	v, _, errReply := getOrCreateSet(ctx, dst)
+	if errReply != nil {
+		return errReply
+	}
+	v.Add(members...)
 	return Integer(int64(len(members)))
 }
 

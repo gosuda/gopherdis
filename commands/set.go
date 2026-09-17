@@ -1,6 +1,8 @@
 package commands
 
 import (
+	"strconv"
+
 	"github.com/gosuda/gopherdis/datastruct/intset"
 	"github.com/gosuda/gopherdis/object"
 )
@@ -163,6 +165,24 @@ func scardCommand(ctx *Context, argv [][]byte) []byte {
 func spopCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 
+	// SPOP key returns one member; SPOP key count returns a collection, and the
+	// two reply shapes are different even when count is 1.
+	withCount := len(argv) >= 3
+	count := 1
+	if withCount {
+		n, err := strconv.ParseInt(string(argv[2]), 10, 64)
+		if err != nil {
+			return Error("value is out of range, must be positive")
+		}
+		if n < 0 {
+			return Error("value is out of range, must be positive")
+		}
+		if n > maxRandCount {
+			return Error("value is out of range")
+		}
+		count = int(n)
+	}
+
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
 
@@ -171,17 +191,45 @@ func spopCommand(ctx *Context, argv [][]byte) []byte {
 		return errReply
 	}
 	if s == nil {
-		return NullBulkString()
+		if withCount {
+			return SetReply(ctx, nil)
+		}
+		return Null(ctx)
 	}
 
-	popped := s.Pop(1)
-	if len(popped) == 0 {
-		return NullBulkString()
-	}
-	if s.Card() == 0 {
+	popped := s.Pop(count)
+	emptied := s.Card() == 0
+	if emptied {
 		ctx.DB.Del(key)
 	}
-	return BulkString([]byte(popped[0]))
+
+	// SPOP picks members at random, so replaying it elsewhere would remove a
+	// different set of them. Propagate what it actually did instead.
+	switch {
+	case len(popped) == 0:
+		ctx.Propagate(nil)
+	case emptied:
+		ctx.Propagate([][]byte{serverDelVerb(), []byte(key)})
+	default:
+		srem := make([][]byte, 0, len(popped)+2)
+		srem = append(srem, []byte("SREM"), []byte(key))
+		for _, m := range popped {
+			srem = append(srem, []byte(m))
+		}
+		ctx.Propagate(srem)
+	}
+
+	if !withCount {
+		if len(popped) == 0 {
+			return Null(ctx)
+		}
+		return BulkString([]byte(popped[0]))
+	}
+	elems := make([][]byte, 0, len(popped))
+	for _, m := range popped {
+		elems = append(elems, BulkString([]byte(m)))
+	}
+	return SetReply(ctx, elems)
 }
 
 // getSetView resolves a set without creating it.

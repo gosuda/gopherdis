@@ -196,3 +196,18 @@ func normalizeRestore(argv [][]byte, now int64) [][]byte {
 	out = append(out, []byte("ABSTTL"))
 	return out
 }
+
+// serverDelVerb is the verb a server-side delete propagates.
+//
+// UNLINK and DEL do the same thing here, since values are freed by the Go
+// collector either way, but the verb a replica receives has to follow
+// lazyfree-lazy-server-del the way it does upstream.
+func serverDelVerb() []byte {
+	configMu.RLock()
+	v := configs["lazyfree-lazy-server-del"]
+	configMu.RUnlock()
+	if strings.EqualFold(v, "yes") {
+		return []byte("UNLINK")
+	}
+	return []byte("DEL")
+}

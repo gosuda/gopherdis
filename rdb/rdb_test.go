@@ -3,9 +3,11 @@ package rdb
 import (
 	"fmt"
 	"path/filepath"
+	"strconv"
 	"testing"
 	"time"
 
+	"github.com/gosuda/gopherdis/datastruct/listpack"
 	"github.com/gosuda/gopherdis/datastruct/quicklist"
 	"github.com/gosuda/gopherdis/datastruct/set"
 	"github.com/gosuda/gopherdis/datastruct/skiplist"
@@ -93,9 +95,18 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	if !ok || val.Type != object.OBJ_LIST {
 		t.Fatalf("list missing or wrong type")
 	}
-	restoredQL := val.Ptr.(*quicklist.Quicklist)
-	if restoredQL.Len() != 3 {
-		t.Fatalf("expected list len 3, got %d", restoredQL.Len())
+	// A three element list is small, so it comes back in the compact encoding
+	// rather than as a quicklist: a value has to report the same OBJECT
+	// ENCODING it would have had if it had been built by RPUSH.
+	restoredLP, ok := val.Ptr.(*listpack.Listpack)
+	if !ok {
+		t.Fatalf("expected a listpack-encoded list, got %T", val.Ptr)
+	}
+	if restoredLP.Len() != 3 {
+		t.Fatalf("expected list len 3, got %d", restoredLP.Len())
+	}
+	if val.Encoding != object.OBJ_ENCODING_LISTPACK {
+		t.Errorf("list encoding = %v, want listpack", val.EncodingName())
 	}
 
 	// Verify Set
@@ -103,15 +114,20 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	if !ok || val.Type != object.OBJ_SET {
 		t.Fatalf("set missing or wrong type")
 	}
-	restoredSet, ok := val.Ptr.(*set.Set)
+	// Three short non-integer members land in the listpack encoding.
+	restoredSet, ok := val.Ptr.(*listpack.Listpack)
 	if !ok {
-		t.Fatalf("expected set to decode as *set.Set, got %T", val.Ptr)
+		t.Fatalf("expected the set to decode as a listpack, got %T", val.Ptr)
 	}
-	if restoredSet.Card() != 3 {
-		t.Fatalf("expected set len 3, got %d", restoredSet.Card())
+	if restoredSet.Len() != 3 {
+		t.Fatalf("expected set len 3, got %d", restoredSet.Len())
 	}
-	if !restoredSet.Contains("alpha") || !restoredSet.Contains("gamma") {
-		t.Fatalf("restored set lost members: %v", restoredSet.Members())
+	members := map[string]bool{}
+	for _, m := range restoredSet.All() {
+		members[string(m)] = true
+	}
+	if !members["alpha"] || !members["gamma"] {
+		t.Fatalf("restored set lost members: %v", members)
 	}
 
 	// Verify Hash
@@ -119,8 +135,18 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	if !ok || val.Type != object.OBJ_HASH {
 		t.Fatalf("hash missing or wrong type")
 	}
-	restoredHash := val.Ptr.(map[string][]byte)
-	if string(restoredHash["field1"]) != "val1" {
+	restoredHash, ok := val.Ptr.(*listpack.Listpack)
+	if !ok {
+		t.Fatalf("expected the hash to decode as a listpack, got %T", val.Ptr)
+	}
+	fields := restoredHash.All()
+	found := false
+	for i := 0; i+1 < len(fields); i += 2 {
+		if string(fields[i]) == "field1" && string(fields[i+1]) == "val1" {
+			found = true
+		}
+	}
+	if !found {
 		t.Fatalf("expected hash field1=val1")
 	}
 
@@ -129,8 +155,22 @@ func TestRDB_RoundtripAllDataTypes(t *testing.T) {
 	if !ok || val.Type != object.OBJ_ZSET {
 		t.Fatalf("zset missing or wrong type")
 	}
-	restoredZS := val.Ptr.(*skiplist.ZSet)
-	score, ok := restoredZS.Score("bob")
+	restoredZS, isLP := val.Ptr.(*listpack.Listpack)
+	if !isLP {
+		t.Fatalf("expected the sorted set to decode as a listpack, got %T", val.Ptr)
+	}
+	zmembers := restoredZS.All()
+	var score float64
+	ok = false
+	for i := 0; i+1 < len(zmembers); i += 2 {
+		if string(zmembers[i]) == "bob" {
+			f, err := strconv.ParseFloat(string(zmembers[i+1]), 64)
+			if err != nil {
+				t.Fatalf("bob's score did not round trip as a number: %q", zmembers[i+1])
+			}
+			score, ok = f, true
+		}
+	}
 	if !ok || score != 20.0 {
 		t.Fatalf("expected bob score 20.0, got %v", score)
 	}

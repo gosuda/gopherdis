@@ -19,6 +19,7 @@ import (
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/parser"
 	"github.com/gosuda/gopherdis/pubsub"
+	"github.com/gosuda/gopherdis/rdb"
 	"github.com/gosuda/gopherdis/replication"
 	"github.com/gosuda/gopherdis/scripting"
 )
@@ -92,10 +93,18 @@ func NewServer() *Server {
 		Scripting:   scripting.NewEngine(),
 		Cluster:     cluster.NewClusterManager("node_local", "127.0.0.1:6379"),
 		arenaPool:   pure.NewPool(4096),
+		// SAVE and BGSAVE write a snapshot on request, the way Redis does even
+		// with no save points configured. Nothing is loaded from it at startup
+		// and nothing is written on a timer; persistence that survives a
+		// restart is opt-in through EnableAOF.
+		RDB: rdb.NewManager(defaultRDBFilename),
 	}
 	srv.wireExpiryPropagation()
 	return srv
 }
+
+// defaultRDBFilename matches Redis' default, relative to the working directory.
+const defaultRDBFilename = "dump.rdb"
 
 func (s *Server) GetDB() *db.ShardedDB {
 	return s.DB

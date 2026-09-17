@@ -5,12 +5,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"sort"
 	"strconv"
 	"time"
 
-	"github.com/gosuda/gopherdis/datastruct/quicklist"
-	"github.com/gosuda/gopherdis/datastruct/set"
-	"github.com/gosuda/gopherdis/datastruct/skiplist"
 	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/object"
 	"github.com/gosuda/gopherdis/rdb/lzf"
@@ -252,41 +250,40 @@ func (dec *Decoder) Load(targetDB *db.ShardedDB) error {
 			if err != nil {
 				return err
 			}
-			ql := quicklist.NewQuicklist()
+			items := make([][]byte, 0, count)
 			for i := uint64(0); i < count; i++ {
 				item, err := dec.ReadString()
 				if err != nil {
 					return err
 				}
-				ql.RPush(item)
+				items = append(items, item)
 			}
-			robj = object.CreateObject(object.OBJ_LIST, ql)
-			robj.Encoding = object.OBJ_ENCODING_QUICKLIST
+			// Pick the encoding from the contents rather than always building
+			// the large form: a value has to come back reporting the same
+			// OBJECT ENCODING it had when it was written.
+			robj = object.NewListFrom(items)
 
 		case TypeSet:
 			count, _, _, err := dec.ReadLen()
 			if err != nil {
 				return err
 			}
-			// Decode into *set.Set, the representation the SADD/SREM/... command
-			// handlers expect; a bare map would make every command WRONGTYPE.
-			s := set.New()
+			members := make([]string, 0, count)
 			for i := uint64(0); i < count; i++ {
 				mem, err := dec.ReadString()
 				if err != nil {
 					return err
 				}
-				s.Add(string(mem))
+				members = append(members, string(mem))
 			}
-			robj = object.CreateObject(object.OBJ_SET, s)
-			robj.Encoding = object.OBJ_ENCODING_HT
+			robj = object.NewSetFrom(members)
 
 		case TypeHash:
 			count, _, _, err := dec.ReadLen()
 			if err != nil {
 				return err
 			}
-			hmap := make(map[string][]byte, count)
+			entries := make([][]byte, 0, count*2)
 			for i := uint64(0); i < count; i++ {
 				field, err := dec.ReadString()
 				if err != nil {
@@ -296,17 +293,16 @@ func (dec *Decoder) Load(targetDB *db.ShardedDB) error {
 				if err != nil {
 					return err
 				}
-				hmap[string(field)] = val
+				entries = append(entries, field, val)
 			}
-			robj = object.CreateObject(object.OBJ_HASH, hmap)
-			robj.Encoding = object.OBJ_ENCODING_HT
+			robj = object.NewHashFrom(entries)
 
 		case TypeZSet, TypeZSet2:
 			count, _, _, err := dec.ReadLen()
 			if err != nil {
 				return err
 			}
-			zs := skiplist.NewZSet()
+			entries := make([]object.ZSetEntry, 0, count)
 			for i := uint64(0); i < count; i++ {
 				member, err := dec.ReadString()
 				if err != nil {
@@ -317,10 +313,19 @@ func (dec *Decoder) Load(targetDB *db.ShardedDB) error {
 					return err
 				}
 				score, _ := strconv.ParseFloat(string(scoreBytes), 64)
-				zs.Add(string(member), score)
+				entries = append(entries, object.ZSetEntry{Member: string(member), Score: score})
 			}
-			robj = object.CreateObject(object.OBJ_ZSET, zs)
-			robj.Encoding = object.OBJ_ENCODING_SKIPLIST
+			// The listpack form keeps members in score order, which the RDB
+			// layout already guarantees.
+			sort.SliceStable(entries, func(i, j int) bool {
+				if entries[i].Score != entries[j].Score {
+					return entries[i].Score < entries[j].Score
+				}
+				return entries[i].Member < entries[j].Member
+			})
+			robj = object.NewZSetFrom(entries, func(f float64) string {
+				return strconv.FormatFloat(f, 'f', -1, 64)
+			})
 
 		default:
 			// Skip unknown object value string

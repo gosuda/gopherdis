@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"bytes"
 	"crypto/sha1"
 	"encoding/hex"
 	"fmt"
@@ -9,7 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/gosuda/gopherdis/db"
 	"github.com/gosuda/gopherdis/glob"
+	"github.com/gosuda/gopherdis/rdb"
 )
 
 func init() {
@@ -186,7 +189,7 @@ func debugCommand(ctx *Context, argv [][]byte) []byte {
 		// nothing behind these beyond acknowledging them.
 		return OK()
 
-	case "JMAP":
+	case "JMAP", "HTSTATS-KEY", "HTSTATS":
 		return OK()
 
 	case "STRINGMATCH-LEN":
@@ -209,8 +212,40 @@ func debugCommand(ctx *Context, argv [][]byte) []byte {
 		return OK()
 
 	case "RELOAD":
-		if ctx != nil && ctx.RDB != nil && ctx.DB != nil {
-			_ = ctx.RDB.Save(ctx.DB)
+		// Serialize the whole keyspace and load it back. The suite uses this to
+		// check that values survive a round trip, so it has to actually go
+		// through the encoder and decoder rather than report success: doing it
+		// in memory keeps that property without needing a configured RDB file.
+		if ctx == nil || ctx.DB == nil {
+			return OK()
+		}
+		var buf bytes.Buffer
+		enc := rdb.NewEncoder(&buf)
+		if err := enc.WriteHeader(); err != nil {
+			return Error("failed to serialize dataset")
+		}
+		if err := enc.WriteStandardAuxFields(); err != nil {
+			return Error("failed to serialize dataset")
+		}
+		if err := enc.WriteSelectDB(0); err != nil {
+			return Error("failed to serialize dataset")
+		}
+		err := ctx.DB.ForEachShardSnapshot(func(entries []db.DBEntry) error {
+			for _, e := range entries {
+				if err := enc.WriteEntry(e); err != nil {
+					return err
+				}
+			}
+			return nil
+		})
+		if err != nil || enc.WriteFooter() != nil {
+			return Error("failed to serialize dataset")
+		}
+
+		// Only discard the live data once the snapshot is in hand.
+		ctx.DB.FlushAll()
+		if err := rdb.NewDecoder(bytes.NewReader(buf.Bytes())).Load(ctx.DB); err != nil {
+			return Error("failed to reload dataset")
 		}
 		return OK()
 
