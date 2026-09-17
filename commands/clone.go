@@ -31,6 +31,13 @@ func cloneContainer(obj *object.Robj) (*object.Robj, bool) {
 				return nil, false
 			}
 		}
+		// Groups are part of the stream's state, so a copy without them is a
+		// different value even though the entries match.
+		for _, g := range v.Groups() {
+			if err := dup.CreateGroup(g.Name, g.LastDeliveredID); err != nil {
+				return nil, false
+			}
+		}
 		return &object.Robj{Type: obj.Type, Encoding: obj.Encoding, Ptr: dup}, true
 
 	case *listpack.Listpack:

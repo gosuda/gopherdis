@@ -24,112 +24,115 @@ func lower(c byte) byte {
 	return c
 }
 
-func matchBytes(p, s []byte, fold bool) bool {
-	for len(p) > 0 {
-		switch p[0] {
-		case '*':
-			// Collapse runs of '*' so "a**b" costs no more than "a*b".
-			for len(p) > 1 && p[1] == '*' {
-				p = p[1:]
-			}
-			if len(p) == 1 {
-				return true // trailing star matches the rest
-			}
-			for i := 0; i <= len(s); i++ {
-				if matchBytes(p[1:], s[i:], fold) {
-					return true
+// matchOne reports whether p[j:] matches the single byte c, and how many
+// pattern bytes that consumed. It handles a literal, '?', an escape and a
+// character class.
+func matchOne(p []byte, j int, c byte, fold bool) (bool, int) {
+	switch p[j] {
+	case '?':
+		return true, 1
+
+	case '[':
+		k := j + 1
+		neg := k < len(p) && p[k] == '^'
+		if neg {
+			k++
+		}
+		matched := false
+		for k < len(p) && p[k] != ']' {
+			if p[k] == '\\' && k+1 < len(p) {
+				k++
+				if p[k] == c {
+					matched = true
+				}
+			} else if k+2 < len(p) && p[k+1] == '-' && p[k+2] != ']' {
+				lo, hi, ch := p[k], p[k+2], c
+				if lo > hi {
+					lo, hi = hi, lo
+				}
+				if fold {
+					lo, hi, ch = lower(lo), lower(hi), lower(ch)
+				}
+				if ch >= lo && ch <= hi {
+					matched = true
+				}
+				k += 2
+			} else {
+				if fold {
+					if lower(p[k]) == lower(c) {
+						matched = true
+					}
+				} else if p[k] == c {
+					matched = true
 				}
 			}
-			return false
+			k++
+		}
+		if k < len(p) && p[k] == ']' {
+			k++
+		}
+		if neg {
+			matched = !matched
+		}
+		return matched, k - j
 
-		case '?':
-			if len(s) == 0 {
-				return false
-			}
-			s = s[1:]
-
-		case '[':
-			if len(s) == 0 {
-				return false
-			}
-			p = p[1:]
-			neg := len(p) > 0 && p[0] == '^'
-			if neg {
-				p = p[1:]
-			}
-			match := false
-			for {
-				if len(p) == 0 {
-					// Unterminated class: Redis treats it as ending here.
-					break
-				}
-				if p[0] == '\\' && len(p) >= 2 {
-					p = p[1:]
-					if p[0] == s[0] {
-						match = true
-					}
-				} else if p[0] == ']' {
-					break
-				} else if len(p) >= 3 && p[1] == '-' && p[2] != ']' {
-					start, end := p[0], p[2]
-					if start > end {
-						start, end = end, start
-					}
-					c := s[0]
-					if fold {
-						start, end, c = lower(start), lower(end), lower(c)
-					}
-					p = p[2:]
-					if c >= start && c <= end {
-						match = true
-					}
-				} else {
-					if fold {
-						if lower(p[0]) == lower(s[0]) {
-							match = true
-						}
-					} else if p[0] == s[0] {
-						match = true
-					}
-				}
-				p = p[1:]
-			}
-			if neg {
-				match = !match
-			}
-			if !match {
-				return false
-			}
-			s = s[1:]
-
-		case '\\':
-			if len(p) >= 2 {
-				p = p[1:]
-			}
-			fallthrough
-
-		default:
-			if len(s) == 0 {
-				return false
-			}
+	case '\\':
+		if j+1 < len(p) {
 			if fold {
-				if lower(p[0]) != lower(s[0]) {
-					return false
-				}
-			} else if p[0] != s[0] {
-				return false
+				return lower(p[j+1]) == lower(c), 2
 			}
-			s = s[1:]
+			return p[j+1] == c, 2
+		}
+		return c == '\\', 1
+
+	default:
+		if fold {
+			return lower(p[j]) == lower(c), 1
+		}
+		return p[j] == c, 1
+	}
+}
+
+// matchBytes walks the pattern with a single backtrack point.
+//
+// The obvious recursive formulation retries every suffix at every '*', which is
+// exponential: a pattern like "a*a*a*...*b" against a string of a's hangs the
+// process, and KEYS takes its pattern straight from the client. Remembering
+// only the most recent '*' and resuming from there keeps it linear in the
+// product of the two lengths.
+func matchBytes(p, s []byte, fold bool) bool {
+	var (
+		i, j      int
+		star      = -1
+		starMatch int
+	)
+
+	for i < len(s) {
+		if j < len(p) && p[j] != '*' {
+			if ok, width := matchOne(p, j, s[i], fold); ok {
+				i++
+				j += width
+				continue
+			}
+		} else if j < len(p) {
+			// Record this star and try matching the rest against s[i:].
+			star = j
+			starMatch = i
+			j++
+			continue
 		}
 
-		p = p[1:]
-		if len(s) == 0 {
-			// Any remaining pattern must be all stars to still match.
-			for len(p) > 0 && p[0] == '*' {
-				p = p[1:]
-			}
-			break
+		if star < 0 {
+			return false
 		}
+		// Backtrack: let the remembered star absorb one more byte.
+		j = star + 1
+		starMatch++
+		i = starMatch
 	}
-	return len(p) == 0 && len(s) == 0
+
+	for j < len(p) && p[j] == '*' {
+		j++
+	}
+	return j == len(p)
 }

@@ -110,7 +110,14 @@ func emptyOrEntry(s *stream.Stream, first bool) []byte {
 	if s.Len() == 0 {
 		return NullArray()
 	}
-	entries := s.Range(stream.ZeroID, stream.MaxID, 1, !first)
+	// Range takes its bounds in traversal order: going backwards, start is the
+	// high end and end is the low one, so the pair has to be swapped.
+	var entries []stream.StreamEntry
+	if first {
+		entries = s.Range(stream.ZeroID, stream.MaxID, 1, false)
+	} else {
+		entries = s.Range(stream.MaxID, stream.ZeroID, 1, true)
+	}
 	if len(entries) == 0 {
 		return NullArray()
 	}

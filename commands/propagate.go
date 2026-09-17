@@ -68,6 +68,14 @@ func normalizeForPropagation(cmdName string, argv [][]byte, reply []byte) [][]by
 	case "getex":
 		return normalizeGetex(argv, now)
 
+	case "getdel":
+		// The value was removed, so the replica needs a DEL. Propagating GETDEL
+		// would work too, but Redis normalises it and the two must agree.
+		if bytes.Equal(reply, []byte("$-1\r\n")) || bytes.Equal(reply, []byte("_\r\n")) {
+			return nil // nothing was deleted
+		}
+		return [][]byte{[]byte("DEL"), argv[1]}
+
 	case "restore":
 		return normalizeRestore(argv, now)
 

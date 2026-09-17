@@ -21,6 +21,7 @@ func init() {
 	reg("sunionstore", sunionstoreCommand, -3, FlagWrite)
 	reg("sdiffstore", sdiffstoreCommand, -3, FlagWrite)
 	reg("sintercard", sintercardCommand, -3, FlagReadOnly)
+	reg("sunioncard", sunioncardCommand, -3, FlagReadOnly)
 	reg("smove", smoveCommand, 4, FlagWrite|FlagFast)
 	reg("srandmember", srandmemberCommand, -2, FlagReadOnly)
 }
@@ -292,4 +293,52 @@ func arrayOfBulk(members []string) []byte {
 		elems = append(elems, BulkString([]byte(m)))
 	}
 	return Array(elems)
+}
+
+// sunioncardCommand reports the cardinality of the union without building it.
+//
+// APPROX is accepted and answered exactly: the token lets Redis return an
+// estimate, and an exact count is a valid answer to a request for an
+// approximate one.
+func sunioncardCommand(ctx *Context, argv [][]byte) []byte {
+	numKeys, err := strconv.Atoi(string(argv[1]))
+	if err != nil {
+		return Error("numkeys should be greater than 0")
+	}
+	if numKeys <= 0 {
+		return Error("numkeys should be greater than 0")
+	}
+	if len(argv) < 2+numKeys {
+		return Error("Number of keys can't be greater than number of args")
+	}
+
+	limit := 0
+	for i := 2 + numKeys; i < len(argv); i++ {
+		switch strings.ToUpper(string(argv[i])) {
+		case "APPROX":
+			// Accepted; the answer below is exact.
+		case "LIMIT":
+			if i+1 >= len(argv) {
+				return Error("syntax error")
+			}
+			n, err := strconv.Atoi(string(argv[i+1]))
+			if err != nil || n < 0 {
+				return Error("LIMIT can't be negative")
+			}
+			limit = n
+			i++
+		default:
+			return Error("syntax error")
+		}
+	}
+
+	members, errReply := setOp(ctx, argv[2:2+numKeys], "union", 0)
+	if errReply != nil {
+		return errReply
+	}
+	n := len(members)
+	if limit > 0 && n > limit {
+		n = limit
+	}
+	return Integer(int64(n))
 }
