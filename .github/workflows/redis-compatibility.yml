@@ -66,6 +66,7 @@ jobs:
           - unit/type/incr
           - unit/networking
           - unit/quit
+          - unit/keyspace
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5

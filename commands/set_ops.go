@@ -22,6 +22,7 @@ func init() {
 	reg("sdiffstore", sdiffstoreCommand, -3, FlagWrite)
 	reg("sintercard", sintercardCommand, -3, FlagReadOnly)
 	reg("sunioncard", sunioncardCommand, -3, FlagReadOnly)
+	reg("sdiffcard", sdiffcardCommand, -3, FlagReadOnly)
 	reg("smove", smoveCommand, 4, FlagWrite|FlagFast)
 	reg("srandmember", srandmemberCommand, -2, FlagReadOnly)
 }
@@ -301,6 +302,14 @@ func arrayOfBulk(members []string) []byte {
 // estimate, and an exact count is a valid answer to a request for an
 // approximate one.
 func sunioncardCommand(ctx *Context, argv [][]byte) []byte {
+	return setCardGeneric(ctx, argv, "union")
+}
+
+func sdiffcardCommand(ctx *Context, argv [][]byte) []byte {
+	return setCardGeneric(ctx, argv, "diff")
+}
+
+func setCardGeneric(ctx *Context, argv [][]byte, op string) []byte {
 	numKeys, err := strconv.Atoi(string(argv[1]))
 	if err != nil {
 		return Error("numkeys should be greater than 0")
@@ -332,7 +341,7 @@ func sunioncardCommand(ctx *Context, argv [][]byte) []byte {
 		}
 	}
 
-	members, errReply := setOp(ctx, argv[2:2+numKeys], "union", 0)
+	members, errReply := setOp(ctx, argv[2:2+numKeys], op, 0)
 	if errReply != nil {
 		return errReply
 	}

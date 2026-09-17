@@ -93,46 +93,95 @@ func matchOne(p []byte, j int, c byte, fold bool) (bool, int) {
 	}
 }
 
-// matchBytes walks the pattern with a single backtrack point.
+// matchBytes is a port of Redis' stringmatchlen_impl, including its
+// skipLongerMatches bail-out.
 //
-// The obvious recursive formulation retries every suffix at every '*', which is
-// exponential: a pattern like "a*a*a*...*b" against a string of a's hangs the
-// process, and KEYS takes its pattern straight from the client. Remembering
-// only the most recent '*' and resuming from there keeps it linear in the
-// product of the two lengths.
+// That flag is what bounds the recursion: once a '*' has consumed the whole
+// remaining string without matching, every enclosing '*' stops trying too, so
+// "a*a*a*...*b" cannot blow up exponentially. It also changes the answer.
+// Matching "*?" repeated 50000 times against 50000 characters is a match by the
+// plain definition of the syntax, and Redis reports no match. Reproducing that
+// is the point: a drop-in replacement has to agree with Redis on what KEYS
+// returns, and unit/keyspace asserts this exact case.
 func matchBytes(p, s []byte, fold bool) bool {
-	var (
-		i, j      int
-		star      = -1
-		starMatch int
-	)
+	skipLongerMatches := false
+	return matchImpl(p, s, fold, &skipLongerMatches, 0)
+}
 
-	for i < len(s) {
-		if j < len(p) && p[j] != '*' {
-			if ok, width := matchOne(p, j, s[i], fold); ok {
-				i++
-				j += width
-				continue
+// maxNesting mirrors Redis' own limit on how deeply '*' may recurse. Past it
+// Redis reports no match, which is why a pattern of 50000 stars finds nothing
+// even against a string long enough to satisfy it.
+const maxNesting = 1000
+
+func matchImpl(p, s []byte, fold bool, skipLongerMatches *bool, nesting int) bool {
+	if nesting > maxNesting {
+		return false
+	}
+
+	for len(p) > 0 && len(s) > 0 {
+		switch p[0] {
+		case '*':
+			for len(p) >= 2 && p[1] == '*' {
+				p = p[1:]
 			}
-		} else if j < len(p) {
-			// Record this star and try matching the rest against s[i:].
-			star = j
-			starMatch = i
-			j++
-			continue
-		}
-
-		if star < 0 {
+			if len(p) == 1 {
+				return true // a trailing star matches the rest
+			}
+			for len(s) > 0 {
+				if matchImpl(p[1:], s, fold, skipLongerMatches, nesting+1) {
+					return true
+				}
+				if *skipLongerMatches {
+					return false
+				}
+				s = s[1:]
+			}
+			// This star exhausted the string, so no longer prefix can help any
+			// enclosing star either.
+			*skipLongerMatches = true
 			return false
-		}
-		// Backtrack: let the remembered star absorb one more byte.
-		j = star + 1
-		starMatch++
-		i = starMatch
-	}
 
-	for j < len(p) && p[j] == '*' {
-		j++
+		case '?':
+			s = s[1:]
+
+		case '[':
+			ok, width := matchOne(p, 0, s[0], fold)
+			if !ok {
+				return false
+			}
+			p = p[width-1:]
+			s = s[1:]
+
+		case '\\':
+			if len(p) >= 2 {
+				p = p[1:]
+			}
+			fallthrough
+
+		default:
+			if fold {
+				if lower(p[0]) != lower(s[0]) {
+					return false
+				}
+			} else if p[0] != s[0] {
+				return false
+			}
+			s = s[1:]
+		}
+
+		p = p[1:]
+		if len(s) == 0 {
+			for len(p) > 0 && p[0] == '*' {
+				p = p[1:]
+			}
+			break
+		}
 	}
-	return j == len(p)
+	// An empty string still matches a pattern that is nothing but stars.
+	if len(s) == 0 {
+		for len(p) > 0 && p[0] == '*' {
+			p = p[1:]
+		}
+	}
+	return len(p) == 0 && len(s) == 0
 }

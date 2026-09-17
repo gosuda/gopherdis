@@ -47,7 +47,8 @@ of the following stops holding:
   required to have executed a non-zero number of tests, because a unit whose
   tags exclude it in external-server mode runs nothing and still reports
   success. Currently verified against 8.10.1: `unit/type/incr` (33 tests),
-  `unit/networking` (1 test) and `unit/quit` (3 tests).
+  `unit/keyspace` (47 tests), `unit/quit` (3 tests) and `unit/networking`
+  (1 test).
 - **Race detector.** `go test -race ./...` across every package.
 
 Units outside that matrix are not claimed to pass. Gopherdis exposes a single

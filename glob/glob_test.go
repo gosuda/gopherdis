@@ -65,6 +65,7 @@ func TestPathologicalPatternsTerminate(t *testing.T) {
 	}{
 		{strings.Repeat("a*", 20) + "b", strings.Repeat("a", 40), false},
 		{strings.Repeat("a*", 20) + "b", strings.Repeat("a", 40) + "b", true},
+		// 200 stars stays under Redis' nesting limit, so this one matches.
 		{strings.Repeat("*?", 200), strings.Repeat("a", 400), true},
 		{strings.Repeat("*", 100) + "z", strings.Repeat("a", 200), false},
 	}
@@ -84,10 +85,14 @@ func TestPathologicalPatternsTerminate(t *testing.T) {
 }
 
 // TestLongPatternIsLinear is the shape unit/keyspace exercises directly.
+//
+// 50000 stars exceeds Redis' nesting limit, so Redis reports no match even
+// though the pattern would otherwise be satisfied. A drop-in replacement has to
+// give the same answer.
 func TestLongPatternIsLinear(t *testing.T) {
 	start := time.Now()
-	if Match(strings.Repeat("*?", 50000), strings.Repeat("a", 50000)) != true {
-		t.Error("expected a match")
+	if Match(strings.Repeat("*?", 50000), strings.Repeat("a", 50000)) != false {
+		t.Error("expected Redis' no-match answer past the nesting limit")
 	}
 	if d := time.Since(start); d > 10*time.Second {
 		t.Errorf("matching took %v, which is not linear", d)
