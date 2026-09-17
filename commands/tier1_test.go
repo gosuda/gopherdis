@@ -1041,3 +1041,19 @@ func TestStreamDigestIgnoresIdentity(t *testing.T) {
 		t.Error("streams with different entries digested the same")
 	}
 }
+
+// TestSetrangeHugeOffset covers a crash: a near-maximum offset overflowed the
+// size check and reached make() with a nonsense length.
+func TestSetrangeHugeOffset(t *testing.T) {
+	ctx := newCtx()
+	for _, off := range []string{"9223372036854775807", "9223372036854775806", "536870913"} {
+		got := run(t, ctx, "SETRANGE", "k", off, "x")
+		if !strings.HasPrefix(got, "-ERR ") {
+			t.Errorf("SETRANGE with offset %s = %q, want an error", off, got)
+		}
+	}
+	// A sane offset still works.
+	if got := run(t, ctx, "SETRANGE", "k", "5", "hello"); got != ":10\r\n" {
+		t.Errorf("ordinary SETRANGE = %q", got)
+	}
+}

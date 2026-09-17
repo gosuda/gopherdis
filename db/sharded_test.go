@@ -125,7 +125,9 @@ func TestLRUEviction(t *testing.T) {
 
 func TestNoEvictionOOM(t *testing.T) {
 	db := NewShardedDB()
-	db.SetMaxMemory(150)
+	// Sized against the per-key accounting in estimateObjectSize: the two small
+	// keys fit, the third does not.
+	db.SetMaxMemory(50)
 	db.SetEvictionPolicy(NoEviction)
 
 	err1 := db.Set("k1", object.CreateStringObject("v1"))
@@ -198,4 +200,3 @@ func TestShardedDB_ConcurrentExpireAndAccess(t *testing.T) {
 	}
 	wg.Wait()
 }
-

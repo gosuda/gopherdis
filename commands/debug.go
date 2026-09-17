@@ -58,9 +58,10 @@ func memoryCommand(ctx *Context, argv [][]byte) []byte {
 		if !exists || obj == nil {
 			return NullBulkString()
 		}
-		// Estimate memory usage in bytes: header + key + payload
-		size := int64(64 + len(key) + len(obj.String()))
-		return Integer(size)
+		// Header plus key plus payload. The header was 64, which made a one byte
+		// value report more memory than Redis allows for it; MEMORY USAGE and
+		// the eviction accounting now use the same per-key overhead.
+		return Integer(ctx.DB.MemoryUsage(key))
 
 	case "STATS":
 		var m runtime.MemStats

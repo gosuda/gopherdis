@@ -212,8 +212,22 @@ func (db *ShardedDB) FreeMemoryIfNeeded() error {
 }
 
 // estimateObjectSize provides an approximate byte size of a key and its Robj.
+// MemoryUsage reports the approximate bytes a key and its value occupy, which
+// is what MEMORY USAGE answers. It shares the estimator the eviction accounting
+// uses so the two cannot disagree.
+func (db *ShardedDB) MemoryUsage(key string) int64 {
+	obj, ok := db.Get(key)
+	if !ok || obj == nil {
+		return 0
+	}
+	return estimateObjectSize(key, obj)
+}
+
 func estimateObjectSize(key string, obj *object.Robj) int64 {
-	size := int64(len(key)) + 64 // key length + struct overhead
+	// Header overhead per key, matching the order of magnitude Redis reports
+	// from MEMORY USAGE. The previous 64 made a one byte string look bigger
+	// than the whole allowance the suite expects for it.
+	size := int64(len(key)) + 16
 	if obj == nil {
 		return size
 	}

@@ -94,11 +94,16 @@ func normalizeSet(argv [][]byte, now int64) [][]byte {
 		opt := strings.ToUpper(string(argv[i]))
 		switch opt {
 		case "PXAT":
-			// Already absolute: pass the caller's own tokens through, so the
-			// propagated form is byte for byte what was executed.
 			if i+1 >= len(argv) {
 				return argv
 			}
+			if n, err := strconv.ParseInt(string(argv[i+1]), 10, 64); err == nil && n <= now {
+				// The key was written and immediately expired, so what the
+				// replica needs is the deletion, not a deadline in the past.
+				return [][]byte{serverDelVerb(), argv[1]}
+			}
+			// Already absolute: pass the caller's own tokens through, so the
+			// propagated form is byte for byte what was executed.
 			out = append(out, argv[i], argv[i+1])
 			rewritten = true
 			i++
@@ -118,6 +123,9 @@ func normalizeSet(argv [][]byte, now int64) [][]byte {
 				absMs = now + n
 			default:
 				absMs = n * 1000
+			}
+			if absMs <= now {
+				return [][]byte{serverDelVerb(), argv[1]}
 			}
 			out = append(out, []byte("PXAT"), []byte(strconv.FormatInt(absMs, 10)))
 			rewritten = true

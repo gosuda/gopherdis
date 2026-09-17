@@ -1,6 +1,7 @@
 package commands
 
 import (
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -24,15 +25,17 @@ func init() {
 // whole: with NX, a single existing key makes the whole command a no-op, which
 // is what keeps it usable as a multi-key guard.
 func msetexCommand(ctx *Context, argv [][]byte) []byte {
-	numKeys, err := strconv.Atoi(string(argv[1]))
-	if err != nil {
-		return Error("value is not an integer or out of range")
+	numKeys64, err := strconv.ParseInt(string(argv[1]), 10, 64)
+	// A numkeys that cannot be a key count at all is rejected as such; one that
+	// is merely larger than the arguments provided is a pair-count mismatch.
+	// The boundary is the 32 bit range, where doubling it would overflow.
+	if err != nil || numKeys64 <= 0 || numKeys64 > math.MaxInt32 {
+		return Error("invalid numkeys value")
 	}
-	if numKeys <= 0 {
-		return Error("numkeys should be greater than 0")
-	}
+	numKeys := int(numKeys64)
+	// numkeys itself is usable, but it has to agree with how many pairs follow.
 	if len(argv) < 2+numKeys*2 {
-		return Error("wrong number of arguments for 'msetex' command")
+		return Error("wrong number of key-value pairs")
 	}
 
 	pairs := argv[2 : 2+numKeys*2]
@@ -52,8 +55,15 @@ func msetexCommand(ctx *Context, argv [][]byte) []byte {
 		case "XX":
 			xx = true
 		case "KEEPTTL":
+			if hasTTL || expAt > 0 {
+				return Error("syntax error")
+			}
 			keepTTL = true
 		case "EX", "PX", "EXAT", "PXAT":
+			if hasTTL || expAt > 0 || keepTTL {
+				// The expiration options are mutually exclusive.
+				return Error("syntax error")
+			}
 			if i+1 >= len(rest) {
 				return Error("syntax error")
 			}

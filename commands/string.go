@@ -106,17 +106,22 @@ func init() {
 
 func setrangeCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
-	offset, err := strconv.Atoi(string(argv[2]))
+	// Parsed as int64 and range checked before it is narrowed: an offset near
+	// the top of the range overflows "offset + len(value)", which then passes a
+	// naive ceiling check and reaches make() with a nonsense size, taking the
+	// process down.
+	offset64, err := strconv.ParseInt(string(argv[2]), 10, 64)
 	if err != nil {
 		return Error("value is not an integer or out of range")
 	}
-	if offset < 0 {
+	if offset64 < 0 {
 		return Error("offset is out of range")
 	}
 	value := argv[3]
-	if offset+len(value) > maxStringLength {
+	if offset64 > maxStringLength || offset64+int64(len(value)) > maxStringLength {
 		return Error("string exceeds maximum allowed size (proto-max-bulk-len)")
 	}
+	offset := int(offset64)
 
 	ctx.DB.LockKey(key)
 	defer ctx.DB.UnlockKey(key)
@@ -168,6 +173,11 @@ func getrangeCommand(ctx *Context, argv [][]byte) []byte {
 	b := obj.Bytes()
 	n := len(b)
 	if n == 0 {
+		return BulkString(nil)
+	}
+	// Checked before conversion: two negative bounds in the wrong order select
+	// nothing, and clamping them first would turn that into a one byte range.
+	if start < 0 && end < 0 && start > end {
 		return BulkString(nil)
 	}
 	if start < 0 {

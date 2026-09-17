@@ -51,7 +51,7 @@ func setbitCommand(ctx *Context, argv [][]byte) []byte {
 
 	val, err := strconv.Atoi(string(argv[3]))
 	if err != nil || (val != 0 && val != 1) {
-		return Error("bit is not the integer 0 or 1")
+		return Error("bit is not an integer or out of range")
 	}
 
 	byteIdx := int(offset / 8)
@@ -168,7 +168,7 @@ func bitposCommand(ctx *Context, argv [][]byte) []byte {
 	key := string(argv[1])
 	bitVal, err := strconv.Atoi(string(argv[2]))
 	if err != nil || (bitVal != 0 && bitVal != 1) {
-		return Error("bit is not the integer 0 or 1")
+		return Error("bit is not an integer or out of range")
 	}
 
 	obj, exists := ctx.DB.Get(key)
