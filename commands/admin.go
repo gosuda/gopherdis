@@ -166,6 +166,11 @@ func helloCommand(ctx *Context, argv [][]byte) []byte {
 	// still encoded as RESP2, which a RESP3 client cannot decode.
 	if ctx != nil {
 		ctx.Proto = proto
+		if ctx.Sub != nil {
+			// Deliveries are framed on the subscriber, which is written from a
+			// different goroutine, so it needs the version too.
+			ctx.Sub.SetProto(proto)
+		}
 	}
 
 	for idx < len(argv) {

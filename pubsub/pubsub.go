@@ -7,18 +7,35 @@ import (
 )
 
 const (
-	NumPubSubShards = 64
+	NumPubSubShards     = 64
 	DefaultMsgQueueSize = 512
 )
 
 // Subscriber represents a client connection subscribed to channels or patterns.
 type Subscriber struct {
-	ID       uint64
-	MsgCh    chan []byte
+	ID    uint64
+	MsgCh chan []byte
+
+	// proto is the RESP version this subscriber negotiated. RESP3 frames
+	// pushed messages with '>' rather than '*', so a RESP3 client that is
+	// handed the array form treats a delivery as a command reply and
+	// desynchronises its request pipeline.
+	proto    int32
 	closed   int32
 	mu       sync.Mutex
 	channels map[string]struct{}
 	patterns map[string]struct{}
+}
+
+// SetProto records the RESP version negotiated on this connection.
+func (s *Subscriber) SetProto(v int) { atomic.StoreInt32(&s.proto, int32(v)) }
+
+// Proto returns the negotiated RESP version, defaulting to 2.
+func (s *Subscriber) Proto() int {
+	if v := atomic.LoadInt32(&s.proto); v != 0 {
+		return int(v)
+	}
+	return 2
 }
 
 // NewSubscriber creates a new subscriber session with an ID.
@@ -94,10 +111,10 @@ type channelShard struct {
 
 // ShardedHub manages lock-sharded channel routing and lock-free COW pattern routing.
 type ShardedHub struct {
-	shards     [NumPubSubShards]channelShard
-	patterns   atomic.Pointer[[]PatternEntry]
-	patMu      sync.Mutex
-	nextSubID  uint64
+	shards    [NumPubSubShards]channelShard
+	patterns  atomic.Pointer[[]PatternEntry]
+	patMu     sync.Mutex
+	nextSubID uint64
 }
 
 // NewShardedHub initializes a new high-throughput ShardedHub.
@@ -249,14 +266,21 @@ func (h *ShardedHub) UnsubscribeAll(sub *Subscriber) {
 // Publish delivers a message to all exact channel and pattern subscribers. Returns total receivers count.
 func (h *ShardedHub) Publish(channel string, message []byte) int {
 	receivers := 0
-	msgPayload := formatMessage(channel, message)
+	// Both framings are built once and each subscriber is handed the one its
+	// connection negotiated.
+	msgResp2 := formatMessage(channel, message, 2)
+	msgResp3 := formatMessage(channel, message, 3)
 
 	// 1. Sharded Exact Channel Matching (Shard RLock)
 	shard := h.getShard(channel)
 	shard.RLock()
 	if subs, exists := shard.channels[channel]; exists && len(subs) > 0 {
 		for _, sub := range subs {
-			if sub.TrySend(msgPayload) {
+			payload := msgResp2
+			if sub.Proto() == 3 {
+				payload = msgResp3
+			}
+			if sub.TrySend(payload) {
 				receivers++
 			}
 		}
@@ -269,7 +293,7 @@ func (h *ShardedHub) Publish(channel string, message []byte) int {
 		patternList := *patternsPtr
 		for _, pe := range patternList {
 			if matchPattern(pe.Pattern, channel) {
-				pmsgPayload := formatPMessage(pe.Pattern, channel, message)
+				pmsgPayload := formatPMessage(pe.Pattern, channel, message, pe.Sub.Proto())
 				if pe.Sub.TrySend(pmsgPayload) {
 					receivers++
 				}
@@ -318,17 +342,29 @@ func (h *ShardedHub) PubSubNumPat() int {
 	return len(*patternsPtr)
 }
 
-func formatMessage(channel string, message []byte) []byte {
-	return []byte(fmt.Sprintf("*3\r\n$7\r\nmessage\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
-		len(channel), channel, len(message), message))
+// pushPrefix is '>' for RESP3 and '*' for RESP2. Out-of-band deliveries are a
+// distinct type in RESP3 so a client can tell them from the reply to whatever
+// it last sent.
+func pushPrefix(proto int) byte {
+	if proto == 3 {
+		return '>'
+	}
+	return '*'
 }
 
-func formatPMessage(pattern, channel string, message []byte) []byte {
-	return []byte(fmt.Sprintf("*4\r\n$8\r\npmessage\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
-		len(pattern), pattern, len(channel), channel, len(message), message))
+func formatMessage(channel string, message []byte, proto int) []byte {
+	return []byte(fmt.Sprintf("%c3\r\n$7\r\nmessage\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
+		pushPrefix(proto), len(channel), channel, len(message), message))
 }
 
-func FormatSubscribeReply(action, name string, count int) []byte {
-	return []byte(fmt.Sprintf("*3\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n:%d\r\n",
-		len(action), action, len(name), name, count))
+func formatPMessage(pattern, channel string, message []byte, proto int) []byte {
+	return []byte(fmt.Sprintf("%c4\r\n$8\r\npmessage\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n",
+		pushPrefix(proto), len(pattern), pattern, len(channel), channel, len(message), message))
+}
+
+// FormatSubscribeReply renders a subscribe or unsubscribe confirmation, which
+// is also a push in RESP3.
+func FormatSubscribeReply(action, name string, count int, proto int) []byte {
+	return []byte(fmt.Sprintf("%c3\r\n$%d\r\n%s\r\n$%d\r\n%s\r\n:%d\r\n",
+		pushPrefix(proto), len(action), action, len(name), name, count))
 }

@@ -65,7 +65,7 @@ func subscribeCommand(ctx *Context, argv [][]byte) []byte {
 	for i := 1; i < len(argv); i++ {
 		channel := string(argv[i])
 		count := ctx.PubSub.Subscribe(ctx.Sub, channel)
-		buf.Write(pubsub.FormatSubscribeReply("subscribe", channel, count))
+		buf.Write(pubsub.FormatSubscribeReply("subscribe", channel, count, protoOf(ctx)))
 	}
 	return buf.Bytes()
 }
@@ -80,12 +80,12 @@ func unsubscribeCommand(ctx *Context, argv [][]byte) []byte {
 		// Unsubscribe from all exact channels
 		count := ctx.Sub.SubCount()
 		ctx.PubSub.UnsubscribeAll(ctx.Sub)
-		buf.Write(pubsub.FormatSubscribeReply("unsubscribe", "", count))
+		buf.Write(pubsub.FormatSubscribeReply("unsubscribe", "", count, protoOf(ctx)))
 	} else {
 		for i := 1; i < len(argv); i++ {
 			channel := string(argv[i])
 			count := ctx.PubSub.Unsubscribe(ctx.Sub, channel)
-			buf.Write(pubsub.FormatSubscribeReply("unsubscribe", channel, count))
+			buf.Write(pubsub.FormatSubscribeReply("unsubscribe", channel, count, protoOf(ctx)))
 		}
 	}
 	return buf.Bytes()
@@ -100,7 +100,7 @@ func psubscribeCommand(ctx *Context, argv [][]byte) []byte {
 	for i := 1; i < len(argv); i++ {
 		pattern := string(argv[i])
 		count := ctx.PubSub.PSubscribe(ctx.Sub, pattern)
-		buf.Write(pubsub.FormatSubscribeReply("psubscribe", pattern, count))
+		buf.Write(pubsub.FormatSubscribeReply("psubscribe", pattern, count, protoOf(ctx)))
 	}
 	return buf.Bytes()
 }
@@ -114,12 +114,12 @@ func punsubscribeCommand(ctx *Context, argv [][]byte) []byte {
 	if len(argv) == 1 {
 		count := ctx.Sub.SubCount()
 		ctx.PubSub.UnsubscribeAll(ctx.Sub)
-		buf.Write(pubsub.FormatSubscribeReply("punsubscribe", "", count))
+		buf.Write(pubsub.FormatSubscribeReply("punsubscribe", "", count, protoOf(ctx)))
 	} else {
 		for i := 1; i < len(argv); i++ {
 			pattern := string(argv[i])
 			count := ctx.PubSub.PUnsubscribe(ctx.Sub, pattern)
-			buf.Write(pubsub.FormatSubscribeReply("punsubscribe", pattern, count))
+			buf.Write(pubsub.FormatSubscribeReply("punsubscribe", pattern, count, protoOf(ctx)))
 		}
 	}
 	return buf.Bytes()
@@ -163,4 +163,12 @@ func pubsubSubCommands(ctx *Context, argv [][]byte) []byte {
 	default:
 		return Error(fmt.Sprintf("unknown pubsub subcommand '%s'", subCmd))
 	}
+}
+
+// protoOf reports the RESP version negotiated on this connection.
+func protoOf(ctx *Context) int {
+	if ctx != nil && ctx.Proto == 3 {
+		return 3
+	}
+	return 2
 }
