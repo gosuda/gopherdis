@@ -67,6 +67,7 @@ jobs:
           - unit/networking
           - unit/quit
           - unit/keyspace
+          - unit/type/set
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -111,9 +112,16 @@ jobs:
           cd /tmp/redis-src
           # --singledb: gopherdis exposes a single database, so the suite must
           # not try to SELECT 9 the way it does against stock Redis.
+          # --singledb: gopherdis exposes a single database, so the suite must
+          #   not try to SELECT 9 the way it does against stock Redis.
+          # -needs:debug: those tests inspect Redis internals through DEBUG,
+          #   such as hash table rehashing state and dict chain lengths, which
+          #   have no counterpart here. Faking the DEBUG output to satisfy them
+          #   would assert nothing.
           tclsh tests/test_helper.tcl \
             --host 127.0.0.1 --port 16380 \
             --singledb \
+            --tags "-needs:debug" \
             --single ${{ matrix.unit }} 2>&1 | tee /tmp/out.log
 
           # The runner exits non-zero on assertion failures, which pipefail

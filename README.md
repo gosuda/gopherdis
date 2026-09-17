@@ -46,23 +46,25 @@ of the following stops holding:
   release tag rather than `unstable`, and must pass end to end. Each is also
   required to have executed a non-zero number of tests, because a unit whose
   tags exclude it in external-server mode runs nothing and still reports
-  success. Currently verified against 8.10.1: `unit/type/incr` (33 tests),
-  `unit/keyspace` (47 tests), `unit/quit` (3 tests) and `unit/networking`
-  (1 test).
+  success. Currently verified against 8.10.1: `unit/type/set` (150 tests),
+  `unit/keyspace` (46 tests), `unit/type/incr` (32 tests), `unit/quit`
+  (3 tests) and `unit/networking` (1 test).
 - **Race detector.** `go test -race ./...` across every package.
 
-Units outside that matrix are not claimed to pass. Gopherdis exposes a single
-database, so the suite is run with `--singledb` and `SELECT` accepts index 0
-only. `DUMP`/`RESTORE` and `BITFIELD` are still missing, and `FUNCTION` answers
-only as an engine with nothing loaded.
+The suite is run with two exclusions, both stated rather than worked around.
+`--singledb`, because gopherdis exposes a single database and `SELECT` accepts
+index 0 only. And `--tags -needs:debug`, because those tests inspect Redis
+internals through `DEBUG`, such as hash table rehashing state and dict chain
+lengths, which have no counterpart here; producing `DEBUG` output shaped to
+satisfy them would assert nothing.
 
-The type units are currently blocked on encoding fidelity rather than on
-missing commands: each runs every test once per encoding and asserts
-`OBJECT ENCODING`, so `listpack`, `intset` and the conversion thresholds have to
-exist for real before they can pass. Reporting those encoding names without the
-representations behind them would turn the suite green without the property
-being true, so they are not reported. Extending the matrix is how compatibility
-progress gets recorded here.
+Units outside that matrix are not claimed to pass, though most now run most of
+their tests. The remaining gaps are multiple databases, the blocking commands
+(`BLPOP` and friends), keyspace notifications, `BITFIELD`, and several `CLIENT`
+subcommands. `FUNCTION` answers only as an engine with nothing loaded.
+
+Extending the matrix is how compatibility progress gets recorded here: a unit
+joins it once it passes end to end, and the badge turns red if it stops.
 
 ## How fast is it?
 

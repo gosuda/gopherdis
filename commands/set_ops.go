@@ -224,11 +224,13 @@ func smoveCommand(ctx *Context, argv [][]byte) []byte {
 	if errReply != nil {
 		return errReply
 	}
-	if srcSet == nil || !srcSet.Contains(member) {
-		return Integer(0)
-	}
+	// The destination's type is checked before the member lookup: a wrong type
+	// is an error even when the move would have been a no-op anyway.
 	if dstObj, ok := ctx.DB.Get(dst); ok && dstObj != nil && dstObj.Type != object.OBJ_SET {
 		return Error("WRONGTYPE Operation against a key holding the wrong kind of value")
+	}
+	if srcSet == nil || !srcSet.Contains(member) {
+		return Integer(0)
 	}
 
 	srcSet.Remove(member)
