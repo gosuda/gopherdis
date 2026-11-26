@@ -13,10 +13,14 @@ on:
 # The badge on this workflow is the project's compatibility claim, so every step
 # below has to be able to fail the build. Nothing here is allowed to end in
 # "|| true".
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   unit:
     name: Go unit tests (race)
-    runs-on: ubuntu-latest
+    runs-on: depot-ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -27,16 +31,6 @@ jobs:
         run: go vet ./...
       - name: go test -race
         run: go test -race -timeout 10m ./...
-
-  differential:
-    name: 1:1 differential suite vs C Redis
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version: "1.24"
-          cache: true
 
       - name: Install C Redis
         run: |
@@ -55,20 +49,8 @@ jobs:
 
   official:
     name: Redis official Tcl suite
-    runs-on: ubuntu-latest
-    strategy:
-      fail-fast: false
-      matrix:
-        # Units that gopherdis passes end to end today. Adding a unit here is
-        # the way compatibility progress gets recorded, and a regression in one
-        # of them turns the badge red.
-        unit:
-          - unit/type/incr
-          - unit/networking
-          - unit/quit
-          - unit/keyspace
-          - unit/type/set
-          - unit/type/string
+    runs-on: depot-ubuntu-24.04
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
@@ -94,52 +76,54 @@ jobs:
       - name: Check out the official Redis test suite
         run: git clone --depth 1 --branch ${{ env.REDIS_SUITE_TAG }} https://github.com/redis/redis.git /tmp/redis-src
 
-      - name: Run ${{ matrix.unit }}
+      - name: Run all six official Tcl units
         run: |
           # pipefail matters: the tcl runner's exit status is the gate, and
           # piping it into tee would otherwise report tee's status instead.
           set -eo pipefail
 
-          ./bin/gopherdis-server -port 16380 &
-          GOPHERDIS_PID=$!
-          trap 'kill $GOPHERDIS_PID 2>/dev/null || true' EXIT
+          for unit in unit/type/incr unit/networking unit/quit unit/keyspace unit/type/set unit/type/string; do
+            (
+              "$GITHUB_WORKSPACE/bin/gopherdis-server" -port 16380 &
+              GOPHERDIS_PID=$!
+              trap 'kill "$GOPHERDIS_PID" 2>/dev/null || true; wait "$GOPHERDIS_PID" 2>/dev/null || true' EXIT
 
-          for i in $(seq 1 30); do
-            redis-cli -p 16380 PING >/dev/null 2>&1 && break
-            sleep 0.2
+              for i in $(seq 1 30); do
+                redis-cli -p 16380 PING >/dev/null 2>&1 && break
+                sleep 0.2
+              done
+              redis-cli -p 16380 PING
+
+              cd /tmp/redis-src
+              # --singledb: gopherdis exposes a single database, so the suite must
+              #   not try to SELECT 9 the way it does against stock Redis.
+              # -needs:debug: those tests inspect Redis internals through DEBUG,
+              #   such as hash table rehashing state and dict chain lengths, which
+              #   have no counterpart here. Faking the DEBUG output to satisfy them
+              #   would assert nothing.
+              tclsh tests/test_helper.tcl \
+                --host 127.0.0.1 --port 16380 \
+                --singledb \
+                --tags "-needs:debug" \
+                --single "$unit" 2>&1 | tee /tmp/out.log
+
+              # The runner exits non-zero on assertion failures, which pipefail
+              # propagates. This also catches a missing command aborting the unit
+              # early with a Tcl exception.
+              if ! grep -q "All tests passed without errors" /tmp/out.log; then
+                echo "::error::$unit did not pass the official Redis suite"
+                exit 1
+              fi
+
+              # A unit whose tags exclude it in external-server mode runs nothing and
+              # still prints "All tests passed", which would make this job green
+              # while asserting nothing. Require that real tests executed.
+              # sed strips the runner's ANSI colouring so [ok] is matchable.
+              EXECUTED=$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.log | grep -c '^\[ok\]' || true)
+              echo "$unit executed $EXECUTED tests"
+              if [ "$EXECUTED" -lt 1 ]; then
+                echo "::error::$unit executed no tests, so it verifies nothing"
+                exit 1
+              fi
+            )
           done
-          redis-cli -p 16380 PING
-
-          cd /tmp/redis-src
-          # --singledb: gopherdis exposes a single database, so the suite must
-          # not try to SELECT 9 the way it does against stock Redis.
-          # --singledb: gopherdis exposes a single database, so the suite must
-          #   not try to SELECT 9 the way it does against stock Redis.
-          # -needs:debug: those tests inspect Redis internals through DEBUG,
-          #   such as hash table rehashing state and dict chain lengths, which
-          #   have no counterpart here. Faking the DEBUG output to satisfy them
-          #   would assert nothing.
-          tclsh tests/test_helper.tcl \
-            --host 127.0.0.1 --port 16380 \
-            --singledb \
-            --tags "-needs:debug" \
-            --single ${{ matrix.unit }} 2>&1 | tee /tmp/out.log
-
-          # The runner exits non-zero on assertion failures, which pipefail
-          # propagates. This also catches a missing command aborting the unit
-          # early with a Tcl exception.
-          if ! grep -q "All tests passed without errors" /tmp/out.log; then
-            echo "::error::${{ matrix.unit }} did not pass the official Redis suite"
-            exit 1
-          fi
-
-          # A unit whose tags exclude it in external-server mode runs nothing and
-          # still prints "All tests passed", which would make this job green
-          # while asserting nothing. Require that real tests executed.
-          # sed strips the runner's ANSI colouring so [ok] is matchable.
-          EXECUTED=$(sed 's/\x1b\[[0-9;]*m//g' /tmp/out.log | grep -c '^\[ok\]' || true)
-          echo "${{ matrix.unit }} executed $EXECUTED tests"
-          if [ "$EXECUTED" -lt 1 ]; then
-            echo "::error::${{ matrix.unit }} executed no tests, so it verifies nothing"
-            exit 1
-          fi
