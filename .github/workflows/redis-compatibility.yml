@@ -26,7 +26,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          cache: true
+          cache: ${{ runner.environment != 'self-hosted' }}
       - name: go vet
         run: go vet ./...
       - name: go test -race
@@ -56,7 +56,7 @@ jobs:
       - uses: actions/setup-go@v5
         with:
           go-version: "1.24"
-          cache: true
+          cache: ${{ runner.environment != 'self-hosted' }}
 
       - name: Install Tcl and redis-cli
         run: |
